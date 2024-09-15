@@ -437,6 +437,18 @@ function stats(lootFunction = lootDefault) {
 		}
 	}
 
+	function cellsPerSecond() { // Nobody seems to be able to get this function to match the calculator's output. Wheeee
+		const cellsKilling = saveData.ok_spread + 1;
+		const ceiledFightingSpeed = Math.ceil(saveData.speed) / 10;
+		const attacksPerMap = Math.ceil(saveData.size / cellsKilling);
+
+		const A = game.portal.Agility.level > 2 ? 0.1 : 0.2;
+		const mapLoadTime = 0.1 + A + ceiledFightingSpeed;
+
+		const actualFightingSpeed = ceiledFightingSpeed + mapLoadTime / attacksPerMap;
+		return cellsKilling / actualFightingSpeed;
+	}
+
 	for (let mapLevel = saveData.zone + extra; mapLevel >= 6; --mapLevel) {
 		if (saveData.coordinate) {
 			coords = Math.ceil(coords / 1.25);
@@ -459,15 +471,18 @@ function stats(lootFunction = lootDefault) {
 						&& tmp.value < 0.500 * currentBest.loot.value // Incredibly generous low map threshold
 						&& mapLevel < saveData.zone - 3 // why is this check relevant? 
 					)
-					|| Math.ceil(saveData.size / (saveData.ok_spread + 1)) * (.5 + saveData.speed) * 2 >= tmp.killSpeed // TODO Verify Quia is not on crack (90% sure this is wrong and just happens to line up with the correct value on my test save)
+					|| tmp.killSpeed >= cellsPerSecond() // If we are max overkilling, going down in level is obviously bad
 					|| stats.length >= maxMaps) break;
 			}
 		}
 
 		stats.unshift(tmp);
 		if (tmp.zone === 'z6') break;
-	}
 
+	}
+	//currentBest = get_best([stats, saveData.stances])
+	//console.log(stats)
+	//console.log(currentBest.loot.mapLevel)
 	return [stats, saveData.stances];
 }
 
