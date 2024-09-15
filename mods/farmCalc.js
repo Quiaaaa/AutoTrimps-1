@@ -395,12 +395,25 @@ function stats(lootFunction = lootDefault) {
 			saveData.challenge_attack = coords;
 		}
 
+		if (saveData.uberNature != "Ice" && calcEnemyBaseHealth('map', mapLevel, 1, "Chimp") > saveData.attack * 2) {
+			continue; // ignore maps we are nowhere close to hitting, but ice is weird
+		}
 		let tmp = zone_stats(mapLevel, saveData.stances, saveData, lootFunction);
 		if (tmp.zone !== 'z6') {
 			if (tmp.value < 1 && mapLevel >= saveData.zone) continue;
 			if (tmp.canAffordPerfect) mapsCanAffordPerfect++;
-			if (stats.length && ((mapsCanAffordPerfect >= 6 && tmp.value < 0.804 * stats[0].value && mapLevel < saveData.zone - 3) || stats.length >= 25)) break;
+			if (stats.length) {
+				let currentBest = get_best([stats, saveData.stances])
+				if (
+					(mapsCanAffordPerfect >= 6
+						&& tmp.value < 0.500 * currentBest.loot.value // Incredibly generous low map threshold
+						&& mapLevel < saveData.zone - 3 // why is this check relevant? 
+					)
+					|| Math.ceil(saveData.size / (saveData.ok_spread + 1)) * (.5 + saveData.speed) * 2 >= tmp.killSpeed // TODO Verify Quia is not on crack (90% sure this is wrong and just happens to line up with the correct value on my test save)
+					|| stats.length >= maxMaps) break;
+			}
 		}
+
 		stats.unshift(tmp);
 		if (tmp.zone === 'z6') break;
 	}
