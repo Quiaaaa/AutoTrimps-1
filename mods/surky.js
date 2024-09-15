@@ -31,6 +31,7 @@ function initPresetSurky() {
 
 	const presetNames = Array.from(document.querySelectorAll('#preset > *'));
 	const presets = {};
+
 	for (let item of presetNames) {
 		const value = item.value;
 		if (value.includes('— ')) continue;
@@ -53,6 +54,7 @@ function saveSurkySettings() {
 	MODULES.autoPerks.GUI.inputs.forEach((item) => {
 		settingInputs[item] = document.querySelector(`#${item}`).value;
 	});
+
 	//Save inputs for all the presets that users can select.
 	//Overrides data for current preset otherwises saves any already saved data for the others.
 	const presetNames = Array.from(document.querySelectorAll('#preset > *'));
@@ -71,7 +73,7 @@ function saveSurkySettings() {
 }
 
 // fill preset weights from the dropdown menu and set special challenge
-function fillPresetSurky(specificPreset) {
+function fillPresetSurky(specificPreset, forceDefault) {
 	if (specificPreset) $$('#preset').value = specificPreset;
 
 	const defaultWeights = {
@@ -91,9 +93,11 @@ function fillPresetSurky(specificPreset) {
 		resplus: [1, 0, 0],
 		trappacarp: [1, 0, 0]
 	};
+
 	const localData = initPresetSurky();
 	const preset = $$('#preset').value;
-	const weights = localData[preset] === null || localData[preset] === undefined ? defaultWeights[preset] : localData[preset];
+	const weights = localData[preset] === null || localData[preset] === undefined || forceDefault ? defaultWeights[preset] : localData[preset];
+
 	$$('#clearWeight').value = weights[0];
 	$$('#survivalWeight').value = weights[1];
 	$$('#radonWeight').value = weights[2];
@@ -164,14 +168,24 @@ function initPerks() {
 
 	const efficiencyPerks = ['Artisanistry', 'Carpentry', 'Criticality', 'Equality', 'Frenzy', 'Greed', 'Hunger', 'Looting', 'Motivation', 'Observation', 'Packrat', 'Pheromones', 'Power', 'Prismal', 'Resilience', 'Smithology', 'Toughness', 'Trumps'];
 
+	const calcNames = { 1: 'Perky', 2: 'Surky' };
+	const calcName = calcNames[portalUniverse];
+	let perkLocks = JSON.parse(localStorage.getItem(`${calcName.toLowerCase()}Inputs`));
+
 	Object.keys(perks).forEach((perkName) => {
 		const perkData = game.portal[perkName];
+		const lockLevel = perkLocks.lockedPerks ? perkLocks.lockedPerks[perkName] : false;
+
 		if (perkData) {
 			const perk = perks[perkName];
-			perk.locked = perkData.radLocked;
-			perk.priceBase = perkData.priceBase;
-			perk.priceFact = perkData.specialGrowth ? perkData.specialGrowth : 1.3;
-			if (perkData.max) perk.max = perkData.max;
+			const { radLocked, priceBase, specialGrowth, max, radLevel, levelTemp } = perkData;
+
+			perk.locked = radLocked;
+			perk.priceBase = priceBase;
+			perk.priceFact = specialGrowth ? specialGrowth : 1.3;
+			if (max || lockLevel) perk.max = lockLevel ? radLevel + (levelTemp ? levelTemp : 0) : max;
+			if (lockLevel) perk.level = radLevel + (levelTemp ? levelTemp : 0);
+
 			if (efficiencyPerks.includes(perkName)) perk.efficiency = 0;
 
 			if (perkName === 'Observation') perk.efficiency2 = 0;
@@ -426,23 +440,28 @@ function initialLoad(skipLevels = false) {
 
 function getTotalPerksCost(perks) {
 	let cost = 0;
+
 	for (let [perkName, perkObj] of Object.entries(perks)) {
 		cost += getPerkCost(perkName, perkObj.level, true, perks);
 	}
+
 	return cost;
 }
 
 function getPerkCost(whichPerk, numLevels, fromZero = false, perks) {
 	if (numLevels === 0) return 0;
+
 	const perk = perks[whichPerk];
 	let level = fromZero ? 0 : perk.level;
 	// if the perk can't be leveled, return infinite cost to naturally avoid buying the perk
-	if (perk.locked || (perk.hasOwnProperty('max') && level + numLevels > perk.max)) return Infinity;
+	if (perk.locked || (perk.hasOwnProperty('max') && level + numLevels > perk.max && game.portal[whichPerk].hasOwnProperty('max'))) return Infinity;
 	let cost = 0;
+
 	for (let i = 0; i < numLevels; i++) {
 		cost += Math.ceil(level / 2 + perk.priceBase * Math.pow(perk.priceFact, level));
 		level++;
 	}
+
 	return cost;
 }
 
@@ -623,11 +642,12 @@ function getObservationGains(levels, props, perks) {
 //   important mechanic other than equipment, there would need to be a separate gear discount input.
 // NOTE: metal/food are MUTLIPLICATIVE gain over and above the unified F/M/L gain.
 function iterateValueFeedback(valueArray, props, perks) {
-	var [Va, Vh, Vm, Vf, Vres, Vrad, Vp, Ve, tribs, collectors, hubEnabled, mets, trinketRate, trinkets, obsLevel, Vpushed = 1, VmDone = 1, VfDone = 1, VresDone = 1, VpDone = 1] = valueArray;
+	let [Va, Vh, Vm, Vf, Vres, Vrad, Vp, Ve, tribs, collectors, hubEnabled, mets, trinketRate, trinkets, obsLevel, Vpushed = 1, VmDone = 1, VfDone = 1, VresDone = 1, VpDone = 1] = valueArray;
 
 	// when tribute count is < 1250, resource->resource/radon feedback is strong via Greed
 	if (tribs < 1250) {
-		var [greedback, tribs] = getGreedResourceFeedback((Vf * Vres) / (VfDone * VresDone), tribs, perks);
+		const [greedback, tribsIterated] = getGreedResourceFeedback((Vf * Vres) / (VfDone * VresDone), tribs, perks);
+		tribs = tribsIterated;
 		Vres *= greedback;
 		Vrad *= greedback;
 	}
@@ -821,6 +841,7 @@ function getLogWeightedValue(props, perks, Va, Vh, Vgear, Vres, Vrad, Ve = 1, Vp
 	if (props.specialChallenge === 'resplus' || props.specialChallenge === 'resminus') {
 		res = Math.log(Vres) + 1e-100 * Math.log(Ve); // hack to still use equality as a primary dump perk
 	}
+
 	if (props.specialChallenge === 'equip') {
 		res = Math.log(Vres * Vm) + 1e-100 * Math.log(Ve); // for equip farming, Artisanistry also counts
 	}
@@ -947,7 +968,7 @@ function getPerkEfficiencies(props, perks) {
 	// Get various gain factors needed to calculate the value of trinkets (and also used to value their respective perks).
 	//  Motivation
 	const motiv = 1 + perks.Motivation.level * perks.Motivation.effect;
-	const motivGain = (motiv + perks.Motivation.effect) / motiv;
+	let motivGain = (motiv + perks.Motivation.effect) / motiv;
 	// trappa is heavily drop-based prior to 160, and mostly gathering based after 170
 	if (props.specialChallenge === 'trappa') {
 		if (props.targetZone < 162) {
@@ -1158,8 +1179,9 @@ function getPerkEfficiencies(props, perks) {
 function clearAndAutobuyPerks() {
 	let [props, perks] = initialLoad();
 	let continueBuying = true;
-	//Run this if we don't have a respec available as we won't be able to clear perks
-	if (!game.global.canRespecPerks) {
+
+	/* Only add perk level if we either can't respec or we don't want to in current run */
+	if (!game.global.canRespecPerks || (game.global.viewingUpgrades && !game.global.respecActive)) {
 		autobuyPerks(props, perks);
 		return;
 	}
@@ -1212,9 +1234,11 @@ function autobuyPerks(props, perks) {
 		const maxCarpLevels = Math.log((props.perksRadon / perks.Carpentry.priceBase) * (perks.Carpentry.priceFact - 1) + 1) / Math.log(perks.Carpentry.priceFact);
 		props.trappaStartPop = 10 * Math.pow(1.1, maxCarpLevels) * props.scaffMult;
 	}
+
 	// optimize Trumps for Downsize
 	perks.Trumps.optimize = props.specialChallenge === 'downsize';
 	props = efficiencyFlag(props, perks);
+
 	while (props.bestPerk !== '') {
 		bestName = props.bestPerk;
 		const bestObj = perks[bestName];
@@ -1226,19 +1250,87 @@ function autobuyPerks(props, perks) {
 		[props, perks] = getPerkEfficiencies(props, perks);
 		props = efficiencyFlag(props, perks);
 	}
+
 	// use trumps as dump perk
 	if (!(props.specialChallenge === 'combat') && !(props.specialChallenge === 'combatRadon')) {
 		while (continueBuying) [continueBuying, props, perks] = buyPerk('Trumps', 1, props, perks);
 	}
 	continueBuying = true;
+
 	// and Pheromones! (but not in Trappa, for minimum confusion, and not before Trappa unlock)
 	if (props.specialChallenge !== 'trappa' && !(props.specialChallenge === 'combat' && props.runningTrappa)) {
 		while (continueBuying) [continueBuying, props, perks] = buyPerk('Pheromones', 1, props, perks);
 	}
 	continueBuying = true;
+
 	// secret setting to dump remaining Rn into bait for feeeeeee
 	while (continueBuying) [continueBuying, props, perks] = buyPerk('Bait', 1, props, perks);
 
+	updateGoldenText(props, perks);
 	allocateSurky(perks);
 	console.log('Surky - Total Radon for perks: ' + prettify(props.perksRadon) + ', Total Radon Spent: ' + prettify(props.radonSpent), 'portal');
+}
+
+function updateGoldenText(props, perks) {
+	const GUavail = Math.floor(props.targetZone / 25) + 16 + Math.floor((Math.min(50000, game.global.achievementBonus) - 10000) / 2000) + Math.floor(Math.max(0, game.global.achievementBonus - 50000) / 10000);
+	// if VM zone is below target zone, don't take GR after VMs
+	// ---> And in fact, optimize as if the last GU before the VM zone is the last GU.
+	//      Past that point, we can trivially take GBs for remaining VMs.
+	const GRavail = props.vmZone < props.targetZone ? GUavail - (Math.floor(props.targetZone / 25) - Math.floor(props.vmZone / 25)) : GUavail;
+	const GVcount = props.hazzie && props.radonWeight > 0 ? 8 : 0;
+
+	let GRcount = 0;
+	let GRgain = GUgain(props, perks, GRavail, GVcount, GRcount, false);
+	let GRgainNext = GUgain(props, perks, GRavail, GVcount, GRcount + 1, false);
+
+	// don't take GR above the VM zone!
+	// while the next GR improves the total weighted value, keep buying GR
+	while (GRcount < GRavail - GVcount && GRgain < GRgainNext) {
+		GRcount++;
+		GRgain = GRgainNext;
+		GRgainNext = GUgain(props, perks, GRavail, GVcount, GRcount + 1, false);
+	}
+
+	// final recommendation
+	let GUtext = 'Suggested GU Strategy:\n\xa0\xa0' + (GVcount > 0 ? GVcount + ' GVs, then ' : '');
+	let GRpct = ((GRcount + GVcount) * (GRcount + GVcount + 1)) / 2 - (GVcount * (GVcount + 1)) / 2;
+	let GBcount = GUavail - GVcount - GRcount;
+	let GBpct = 3 * ((GUavail * (GUavail + 1)) / 2 - ((GRcount + GVcount) * (GRcount + GVcount + 1)) / 2);
+
+	if (GRcount > 0) GUtext += GRcount + ' GRs (' + GRpct + '%), then ';
+	GUtext += GBcount + ' GBs (' + GBpct + '%)';
+
+	if (game.global.canGuString) {
+		const vComma = GRcount > 0 || GBcount > 0 ? ',' : '';
+		const rComma = GBcount > 0 ? ',' : '';
+		GUtext += '\n\xa0\xa0GU String: ' + (GVcount > 0 ? GVcount + 'v' + vComma : '') + (GRcount > 0 ? GRcount + 'r' + rComma : '') + (GBcount > 0 ? GBcount + 'b' : '');
+	} else if (GBcount > 0 && GBcount < Math.floor(props.targetZone / 25)) {
+		/* if there aren't enough GBs to cover all the non-free GUs, present an alternate automate-able strategy */
+		GBcount = 0;
+		let GBgain = GUgain(props, perks, GUavail, GVcount, GBcount, true);
+		let GBgainNext = GUgain(props, perks, GUavail, GVcount, GBcount + 1, true);
+		while (GBcount < GUavail - GVcount && GBgain < GBgainNext) {
+			GBcount++;
+			GBgain = GBgainNext;
+			GBgainNext = GUgain(props, perks, GUavail, GVcount, GBcount + 1, true);
+		}
+		GUtext += '\n\xa0\xa0or ' + (GVcount > 0 ? GVcount + ' GVs, then ' : '');
+		GRcount = GUavail - GVcount - GBcount;
+		GBpct = 3 * (((GBcount + GVcount) * (GBcount + GVcount + 1)) / 2 - (GVcount * (GVcount + 1)) / 2);
+		GRpct = (GUavail * (GUavail + 1)) / 2 - ((GBcount + GVcount) * (GBcount + GVcount + 1)) / 2;
+		GUtext += GBcount + ' GBs (' + GBpct + '%), then ' + GRcount + ' GRs (' + GRpct + '%)';
+	}
+
+	console.log(GUtext);
+}
+
+/* if we have N GUs total and M GUs of the given type (from isGB) bought, what's the total weighted value of our GUs? */
+function GUgain(props, perks, GUavail = 0, GVbought = 0, GUbought = 0, isGB = false) {
+	GUbought += GVbought; // we start buying GUs of the specified type after GVs
+	const GUbonus1 = Math.max(0, (GUbought * (GUbought + 1)) / 2 - (GVbought * (GVbought + 1)) / 2);
+	const GUbonus2 = Math.max(0, (GUavail * (GUavail + 1)) / 2 - (GUbought * (GUbought + 1)) / 2);
+	const GBgain = 1 + (3 * (isGB ? GUbonus1 : GUbonus2)) / 100;
+	const GRgain = 1 + (isGB ? GUbonus2 : GUbonus1) / 100;
+
+	return getLogWeightedValue(props, perks, GBgain, GBgain, 1, 1, GRgain, 1, 1);
 }

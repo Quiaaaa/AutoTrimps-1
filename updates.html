@@ -149,11 +149,432 @@
 					document.getElementById('desktopLinksRow').style.display = 'table-row';
 				}
 				function nwOpen(link) {
-					var gui = require('nw.gui');
+					const gui = require('nw.gui');
 					gui.Shell.openExternal(link);
 				}
 			</script>
 			<div style="font-size: 1.3em; font-weight: bold; display: block; width: 100%; text-align: center">AutoTrimps Updates!</div>
+
+			<!-- 6.5.89-->
+			<ul class="betterList">
+				<li>6.5.89 - 07/09/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">Universe 2</li>
+					<li>The lock perks setting is now available for Surky in U2! It's not been thoroughly tested so let me know if you have any issues with it.</li>
+				</ul>
+				<ul>
+					<li>Bugfixes</li>
+					<li class="second-child">Universe 1</li>
+					<li>Fixed an issue with Auto Level recommending wrong map levels during wind zones.</li>
+					<li>Fixed a Perky issue that would cause the _II version of perks to be set to 0 when the base perk was locked.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.88-->
+			<ul class="betterList">
+				<li>6.5.88 - 05/09/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">General</li>
+					<li>Added a button to force Auto Portal to run.</li>
+					<li>Moved the Pause AutoTrimps button to the top row of the Core tab.</li>
+					<li>Added the ability to lock perks for Perky (U1). This will be added for Surky (U2) in the next few days.</li>
+					<li class="second-child">Universe 2</li>
+					<li>Desolation "Only Destack Z" destacking will now exit the map when it completes destacking rather than exiting and abandoning the map.</li>
+				</ul>
+				<ul>
+					<li>Bugfixes</li>
+					<li class="second-child">General</li>
+					<li>Fixed an issue where the he/hr void portal would override the Void Map settings goal to run void maps.</li>
+					<li class="second-child">Universe 1</li>
+					<li>Improved information on some Experience challenge setting tooltips.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.87-->
+			<ul class="betterList">
+				<li>6.5.87 - 28/08/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">Universe 1</li>
+					<li>The Void Map "Portal After" setting and the Helium Per Hour "Portal After" settings will now buy as many nurseries as it can while the void pre-farm or void maps are being run.</li>
+				</ul>
+				<ul>
+					<li>Bugfixes</li>
+					<li class="second-child">General</li>
+					<li>Fixed an issue where the he/hr void portal would override the Void Map settings goal to run void maps.</li>
+					<li class="second-child">Universe 2</li>
+					<li>Fixed an issue with Auto Equality in crit voids where you can only survive a non-crit hit.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.86-->
+			<ul class="betterList">
+				<li>6.5.86 - 25/08/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">General</li>
+					<li>Added the ability to hide the AutoTrimps Auto buttons into the new "Hide Auto Buttons" setting.</li>
+					<li>Merged the Helium Per Hour & Auto Maps status display settings into the new "Hide Auto Buttons" setting.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.85-->
+			<ul class="betterList">
+				<li>6.5.85 - 24/08/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">General</li>
+					<li>Added an additional setting in the Display tab to disable ingame automation buttons. This feature replaces the hide fight buttons setting as it includes that setting inside of it.</li>
+					<li>Modified the Enhance Grid setting to have exotic icons on the left side and fast icons on the right side of a cell.</li>
+					<li>Added a AT Messages option for displaying golden upgrade purchases.</li>
+				</ul>
+				<ul>
+					<li>Bugfixes</li>
+					<li class="second-child">General</li>
+					<li>Fixed an issue where HD Farm/Hits Survived were both doing 1 less map than intended.</li>
+					<li class="second-child">Universe 1</li>
+					<li>Fix Perky issue with coordination when respeccing perks.</li>
+					<li class="second-child">Universe 2</li>
+					<li>Fixed issues with cores being recycled in U2.</li>
+					<li>Fixed a Desolation auto equality issue of it not calculating exploding enemies damage.</li>
+					<li>Fixed an issue with map level decisions during Desolation.</li>
+					<li>Fixed an issue with eternal map recycling during Desolation.</li>
+					<li>Fixed an issue with respeccing mutators on portal.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.84-->
+			<ul class="betterList">
+				<li>6.5.84 - 08/08/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">General</li>
+					<li>Added an additional setting to farm for more health when using the <b>Hits Survived</b> setting if you don't reach at least 80% of the targetted value.</li>
+					<li class="second-child">Universe 1</li>
+					<li>Moved the <b>VM Scryer</b> setting to the <b>Combat</b> tab.</li>
+					<li>Added an additional setting the for Mapology challenge to only enable specific mapping settings when running the challenge.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.83-->
+			<ul class="betterList">
+				<li>6.5.83 - 03/08/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">General</li>
+					<li>When the "View Perks" menu is open you now need to press "Respec Perks" to do a full perk respec. If you don't it will only try to add level to your current perks.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.82-->
+			<ul class="betterList">
+				<li>6.5.82 - 25/07/24</li>
+				<ul>
+					<li>Features</li>
+					<li class="second-child">General</li>
+					<li>Added a button to the Perky & Surky perk calculators to reset your current preset to its default weights.</li>
+				</ul>
+				<ul>
+					<li>Bugfixes</li>
+					<li class="second-child">General</li>
+					<li>Fixed issues with auto level when running dailies with the explosive modifier.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.81-->
+			<ul class="betterList">
+				<li>6.5.81 - 18/07/24</li>
+				<ul>
+					<li>Bugfixes</li>
+					<li class="second-child">General</li>
+					<li>Decay and Melt challenge settings have been changed to check if you're at or above that amount of stacks and values set above max stack count just count as max stacks.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.80-->
+			<ul class="betterList">
+				<li>6.5.80 - 09/07/24</li>
+				<ul>
+					<li>Bugfixes</li>
+					<li class="second-child">General</li>
+					<li>Gather selection now won't be overriden by farming settings wanting to use a specific type unless auto maps is enabled.</li>
+					<li>Fixed an issue where the map repeat counter wasn't properly being saved when swapping maps due to biome selection.</li>
+					<li class="second-child">Universe 2</li>
+					<li>Fixed an issue where the AutoStructure Safe Gateway inputs were being saved incorrectly.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.79-->
+			<ul class="betterList">
+				<li>6.5.79 - 06/07/24</li>
+				<ul>
+					<li>Bugfixes</li>
+					<li class="second-child">Universe 2</li>
+					<li>Fixed an issue where breed shields were causing issues with shield swapping when starting fights.</li>
+					<li>Fixed an issue where breed shields were being swapped to when changing maps and killing armies due to it.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.78-->
+			<ul class="betterList">
+				<li>6.5.78 - 18/06/24</li>
+				<ul>
+					<li>Features</li>
+					<li class="second-child">General</li>
+					<li>Auto Maps will now only toggle the exit to maps/world setting when mapping and the finish all void maps setting when it is actively running void maps.</li>
+					<li class="second-child">Universe 2</li>
+					<li>Added a map level dropdown to the Safe Gateway building setting so that you can select which map level it compares against.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.77-->
+			<ul class="betterList">
+				<li>6.5.77 - 26/04/24</li>
+				<ul>
+					<li>Features</li>
+					<li class="second-child">Universe 1</li>
+					<li>Added an Advanced Nurseries setting to purchase nurseries after X amount of Hits Survived maps.</li>
+					<li>Added a Scryer setting to disable scryer stance if you'd need more than X hits to kill an enemy.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.76-->
+			<ul class="betterList">
+				<li>6.5.76 - 23/04/24</li>
+				<ul>
+					<li>Features</li>
+					<li class="second-child">Universe 1</li>
+					<li>When the script wants to use wind stance in world zones it now calculates the amount of cells you can overkill with your max damage in scryer stance and if you won't kill any enemies that drop helium it uses scryer stance instead.</li>
+					<li>Wind stance will now be used over scryer stance if you either won't kill the enemy that hit or your have/will cap your wind stacks.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.75-->
+			<ul class="betterList">
+				<li>6.5.75 - 23/04/24</li>
+				<ul>
+					<li>Features</li>
+					<li class="second-child">General</li>
+					<li>The script will now stop the game running until the script has finished loading to ensure no lost time in either time warp or regular gameplay.</li>
+					<li>Added a new setting to allow you to select between using loot or speed maps for map bonus when running the HD Ratio & Hits Survived settings.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.74-->
+			<ul class="betterList">
+				<li>6.5.74 - 22/04/24</li>
+				<ul>
+					<li>Bugfixes</li>
+					<li class="second-child">General</li>
+					<li>Fixed an issue that caused the Holey achievement to be unattainable.</li>
+					<li>Fixed several Auto Level calculation issues.</li>
+					<li>Fixed an auto portal issue where it would portal into your currently selected challenge if you were on the portal screen when it attempted to portal.</li>
+					<li class="second-child">Universe 1</li>
+					<li class="square">Fixed an issue where Wind stance was sometimes incorrectly being used on Wind zones</li>
+					<li class="square">Fixed a Spire calc issue</li>
+					<li class="square">Fixed an issue that caused the target prestige setting for Bionic Raiding to not work</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.73-->
+			<ul class="betterList">
+				<li>6.5.73 - 18/04/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">General</li>
+					<li>Testing out an alternative system for building purchases that identifies the efficiency of each building and purchases them that way. These changes only run when when the Hub building is locked.</li>
+					<li class="square">These changes only run when when the Hub building is locked.</li>
+					<li class="square">If you notice any issues of buildings not being purchased even though they likely should then please inform me so that I can adjust the code.</li>
+					<li>Added an additional setting to display the most efficient building to purchase.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.72-->
+			<ul class="betterList">
+				<li>6.5.72 - 06/04/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">Universe 1</li>
+					<li>The Fused C2 setting is now only visible when using the C2 Runner % setting and has been changed into a multitoggle setting to allow you to always run them or only run them when both challenges are below your specified C2 Runner percent.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.71-->
+			<ul class="betterList">
+				<li>6.5.71 - 06/04/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">Universe 1</li>
+					<li>Advanced Nurseries will now also run when you have finished Hits Survived farming on a zone instead of only doing it when you have enough Map Bonus stacks.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.70-->
+			<ul class="betterList">
+				<li>6.5.70 - 03/04/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">General</li>
+					<li>The script will now disable the game from running until it finishes loading to ensure you don't have any suboptimal gameplay.</li>
+				</ul>
+				<ul>
+					<li>Bugfixes</li>
+					<li class="second-child">General</li>
+					<li>Fixed an issue where Easter Eggs weren't being clicked on z1.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.69-->
+			<ul class="betterList">
+				<li>6.5.69 - 03/04/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">General</li>
+					<li>The script will now check if it can create a new map and if it can't then tries to find any map of the specified level and runs that until it can make the necessary map.</li>
+				</ul>
+				<ul>
+					<li>Bugfixes</li>
+					<li class="second-child">General</li>
+					<li>Fixed an issue with map selection and creation.</li>
+					<li>When farming prestiges through the Min Map Bonus Level setting the script will now properly identify if you'll get the necessary prestiges by running that map you're on.</li>
+					<li>Fixed an issue with map repeat being disabled when it shouldn't be.</li>
+					<li class="second-child">Universe 1</li>
+					<li>Fixed an issue where the Auto Gigas setting was being ignored if you had the deca build unlock.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.68-->
+			<ul class="betterList">
+				<li>6.5.68 - 28/03/24</li>
+				<ul>
+					<li>Bugfixes</li>
+					<li class="second-child">Universe 1</li>
+					<li>Fixed multiple enemy health and damage calculation issues.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.67-->
+			<ul class="betterList">
+				<li>6.5.67 - 24/03/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">Universe 1</li>
+					<li>New Auto Level system now supports Wind stance and completely replaces Scryer calculations with it if you aren't in a Wind empowerment zone.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.66-->
+			<ul class="betterList">
+				<li>6.5.66 - 23/03/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">Universe 1</li>
+					<li>Added an additional setting to allow New Auto Level to use Scryer stance.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.65-->
+			<ul class="betterList">
+				<li>6.5.65 - 23/03/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">Universe 1</li>
+					<li>Have rewritten a lot of Auto Stance + Scryer code so let me know if you experience any issues with them!</li>
+					<li>Added info to the New Auto Level setting to state that Scryer stance will override other settings if that is the most optimal stance for maps.</li>
+				</ul>
+				<ul>
+					<li>Bugfixes</li>
+					<li class="second-child">Universe 1</li>
+					<li>Fixed a rare issue with Geneticists.</li>
+					<li>Fixed scripts block heirloom calculations when using a Trainer Efficiency shield.</li>
+					<li class="second-child">Universe 1</li>
+					<li>Fixed an issue where equipment wasn;t being purchased during the Transmute challenge.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.64-->
+			<ul class="betterList">
+				<li>6.5.64 - 20/03/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">General</li>
+					<li>Equipment level caps will now be ignored if within your AE: HD Cut-off, AE: HS Cut-off, or AE: Zone ranges.</li>
+				</ul>
+				<ul>
+					<li>Bugfixes</li>
+					<li class="second-child">General</li>
+					<li>Fixed an issue where New Auto Level wasn't properly dividing block/health by 2 when using Scryer or Dominance stances.</li>
+					<li class="second-child">Universe 1</li>
+					<li>Fixed Devastation not being in auto portals one off challenges list.</li>
+					<li>Fixed an issue where the script wasn't properly applying the gymystic upgrades bonus multiplier to gym purchases when you bought more than one at a time.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.63-->
+			<ul class="betterList">
+				<li>6.5.63 - 17/03/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">General</li>
+					<li>The standalone Hits Survived setting will now map again if you fall below 80% of your targetted Hits Survived.</li>
+					<li>The Map Bonus Min Level setting will now take into account if you can survive in a map required to get map bonus.</li>
+					<li>Added a Farm Time dropdown to the Map Farm setting. This currently doesn't work with Time Warp so don't use it if you intend to go offline.</li>
+					<li class="second-child">Universe 1</li>
+					<li>Magma Fuel & Upgrade settings.</li>
+					<li class="square">Added the Minimize setting from Gatorcalc. There's setting you can toggle to activate it.</li>
+					<li class="square">Removed the old Magmite spending code which has been fully replaced with the upgrade algorithm from Gatorcalc. Due to this the Spend Magmite setting has been reset to default (off) so you will need to enable it again if it was on before.</li>
+					<li class="square">Added a setting to specify the amount of runs you're willing to spend on a Magmite upgrade.</li>
+					<li class="square">Added one and done upgrades to the Magmite upgrade setting and an input to specify the maximum amount of runs to farm for them.</li>
+				</ul>
+				<ul>
+					<li>Bugfixes</li>
+					<li class="second-child">General</li>
+					<li>Fixed an issue with New Auto Level not calculating estimated difficulty and size of maps that you don't already own.</li>
+					<li class="second-child">Universe 2</li>
+					<li>Fixed an issue where the script broke when running Archaeology.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.62-->
+			<ul class="betterList">
+				<li>6.5.62 - 12/03/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">General</li>
+					<li>Implemented more optimised breed code from Quia/Noo. Any issues let me know and I'll look into them.</li>
+				</ul>
+				<ul>
+					<li>Bugfixes</li>
+					<li class="second-child">General</li>
+					<li>Fixed an issue where the map level for Hits Survived wasn't being updated when 1 away from obtaining 10 map bonus stacks.</li>
+					<li class="second-child">Universe 2</li>
+					<li>Fixed an issue where the script broke when running Archaeology.</li>
+				</ul>
+			</ul>
+
+			<!-- 6.5.61-->
+			<ul class="betterList">
+				<li>6.5.61 - 08/03/24</li>
+				<ul>
+					<li>Changes</li>
+					<li class="second-child">General</li>
+					<li>Implemented new gather code to improve early game optimisation (thanks Ray!).</li>
+					<li>When using the New Auto Level setting the script will now change your stance to the one that Auto Level has deemed appropriate for maximum loot/speed.</li>
+					<li>The Map Bonus Ratio setting will now display HD Ratio in the status window when running rather than Map Bonus count so that it's easier to identify if it's close to completion.</li>
+					<li>Trapper/Trappapalooza now has an additional setting so that you can choose between stopping Coordination purchases at either a set value or a specific army size value.</li>
+					<li class="second-child">Universe 1</li>
+					<li>When using the New Auto Level setting the script will now change your stance to the one that Auto Level has deemed appropriate for maximum loot/speed.</li>
+				</ul>
+				<ul>
+					<li>Bugfixes</li>
+					<li class="second-child">General</li>
+					<li>Fixed an issue with prestige raiding that occurred when the highest level map being run was more than 4 levels above the first map.</li>
+					<li class="second-child">Universe 2</li>
+					<li>Fixed an issue where the script broke when running Archaeology.</li>
+				</ul>
+			</ul>
 
 			<!-- 6.5.60-->
 			<ul class="betterList">
@@ -171,7 +592,7 @@
 					<li>Fixed an issue where shields weren't being prestiged until they reached level 9 in certain situations.</li>
 					<li>The raiding setting has now been hidden until plus level maps are unlocked.</li>
 					<li>The bionic raiding setting has now been hidden until z125 has been reached.</li>
-					<li>Thebone shrine setting has now been hidden until you have at least one level in the bone upgrade.</li>
+					<li>The bone shrine setting has now been hidden until you have at least one level in the bone upgrade.</li>
 				</ul>
 			</ul>
 

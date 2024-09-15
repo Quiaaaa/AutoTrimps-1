@@ -120,11 +120,11 @@ function debug(message, messageType, icon) {
 	if (!atSettings.initialise.loaded) return;
 
 	const settingArray = getPageSetting('spamMessages');
-	const canRunTW = ['maps', 'map_Destacking', 'map_Details', 'map_Skip', 'offline'].includes(messageType);
-	const sendMessage = messageType in settingArray ? settingArray[messageType] : false;
+	const canRunTW = ['maps', 'map_Destacking', 'map_Details', 'map_Skip', 'offline', 'challenge', 'debugStats'].includes(messageType);
+	const sendMessage = messageType in settingArray ? settingArray[messageType] : ['challenge', 'offline', 'debugStats'].includes(messageType);
 
-	if (sendMessage || messageType === 'offline') {
-		console.log(`${timeStamp()} ${message}`);
+	if (sendMessage || !messageType) {
+		console.log(`${timeStamp()} ${updatePortalTimer(true)} ${message}`);
 		if (!usingRealTimeOffline || canRunTW) message_AT(message, messageType, icon);
 	}
 }
@@ -208,9 +208,9 @@ function gameUserCheck(skipTest) {
 	return allowedUsers.includes(user);
 }
 
-//DO NOT RUN CODE BELOW THIS LINE -- PURELY FOR TESTING PURPOSES
+// DO NOT RUN CODE BELOW THIS LINE -- PURELY FOR TESTING PURPOSES
 
-//Will activate timewarp.
+// Will activate timewarp.
 function _getTimeWarpHours(inputHours) {
 	let timeWarpHours = 24; // default value
 
@@ -247,7 +247,7 @@ function testTimeWarp(hours) {
 }
 
 function testSpeedX(interval) {
-	//Game uses 100ms for 1 second, so 5ms is 20x speed;
+	// game uses 100ms for 1 second
 	if (game.options.menu.pauseGame.enabled) {
 		setTimeout(testSpeedX, interval, interval);
 		return;
@@ -255,7 +255,7 @@ function testSpeedX(interval) {
 
 	const date = new Date();
 	const now = date.getTime();
-	let tick = 100;
+	const tick = 100;
 
 	game.global.lastOnline = now;
 	game.global.start = now;
@@ -441,7 +441,7 @@ function hypothermiaEndZone() {
 function _priorityChallengeCheck(challenge) {
 	if (game.global.multiChallenge[what]) return true;
 	else if (game.global.challengeActive === what) return true;
-	else return false;
+	return false;
 }
 
 function _getPriorityOrderDropdowns(universe, challenge) {
@@ -520,14 +520,16 @@ function getPerkModifier(what) {
 	return game.portal[what].modifier || 0;
 }
 
-function noBreedChallenge() {
+function noBreedChallenge(mapping = false) {
+	if (mapping && (game.global.preMapsActive || game.global.mapsActive || game.global.soldierHealth <= 0)) return false;
 	return challengeActive('Trapper') || challengeActive('Trappapalooza');
 }
 
 function downloadSave(portal) {
 	if (!getPageSetting('downloadSaves')) return;
 	if (portal && !portalWindowOpen) return;
-	MAZLookalike(null, 'downloadSave');
+
+	importExportTooltip(null, 'downloadSave');
 }
 
 function _assembleChangelog(changes) {
@@ -552,6 +554,39 @@ function printChangelog(changes) {
 	tooltip('confirm', null, 'update', body + footer, action, title, acceptBtnText, null, hideCancel);
 	if (typeof _verticalCenterTooltip === 'function') _verticalCenterTooltip(true);
 	else verticalCenterTooltip(true);
+}
+
+function updateFluffyRewards() {
+	let calculatedPrestige = Fluffy.getCurrentPrestige();
+	if (game.talents.fluffyAbility.purchased) calculatedPrestige++;
+
+	const rewardsList = Fluffy.getRewardList();
+	const prestigeRewardsList = Fluffy.getPrestigeRewardList();
+
+	const combinedList = [...rewardsList, ...prestigeRewardsList];
+
+	const fluffyLevelPlusPrestige = Fluffy.currentLevel + calculatedPrestige;
+
+	const fluffyRewards = combinedList.reduce((acc, reward, index) => {
+		if (fluffyLevelPlusPrestige > index) {
+			acc[reward] = (acc[reward] || 0) + 1;
+		} else if (!acc[reward]) {
+			acc[reward] = 0;
+		}
+		return acc;
+	}, {});
+
+	fluffyRewards.universe = game.global.universe;
+	fluffyRewards.level = fluffyLevelPlusPrestige;
+
+	const totalRewards = [...Fluffy.prestigeRewards, ...Fluffy.rewards, ...Fluffy.rewardsU2];
+	totalRewards.forEach((reward) => {
+		fluffyRewards[reward] = fluffyRewards[reward] || 0;
+	});
+
+	fluffyRewards.reincarnate = fluffyRewards.reincarnate || 0;
+
+	return fluffyRewards;
 }
 
 function setupAddonUser(force) {
@@ -588,6 +623,7 @@ function setupAddonUser(force) {
 
 	const mapFunctionItems = {
 		afterVoids: false,
+		isHealthFarming: '',
 		hasHealthFarmed: '',
 		hasVoidFarmed: '',
 		runUniqueMap: '',
@@ -606,9 +642,9 @@ function setupAddonUser(force) {
 function getMaxAffordable(baseCost, totalResource, costScaling, isCompounding) {
 	if (!isCompounding) {
 		return Math.floor((costScaling - 2 * baseCost + Math.sqrt(Math.pow(2 * baseCost - costScaling, 2) + 8 * costScaling * totalResource)) / 2);
-	} else {
-		return Math.floor(Math.log(1 - ((1 - costScaling) * totalResource) / baseCost) / Math.log(costScaling));
 	}
+
+	return Math.floor(Math.log(1 - ((1 - costScaling) * totalResource) / baseCost) / Math.log(costScaling));
 }
 
 function getResourcefulMult() {
@@ -616,23 +652,218 @@ function getResourcefulMult() {
 	return resourcefulLevel > 0 ? Math.pow(1 - getPerkModifier('Resourceful'), resourcefulLevel) : 1;
 }
 
-function shieldBlockUpgrades() {
-	const upgradeObj = {};
+function maybePrettify(value, pretty) {
+	return pretty && value && value !== Infinity ? prettify(value) : value;
+}
 
-	let itemData = game.buildings.Gym;
-	let increaseBy = itemData.increase.by;
-	let cost = itemData.cost.wood[0] * Math.pow(itemData.cost.wood[1], itemData.owned) * getResourcefulMult();
+function nurseryHousingEfficiency(pretty = false) {
+	if (game.global.universe !== 1) return { mostEfficient: 'Housing' };
 
-	upgradeObj.Gym = cost / increaseBy;
+	const trimps = game.resources.trimps;
+	const trimpsMax = trimps.realMax();
 
-	itemData = game.equipment.Shield;
-	const prestige = buyPrestigeMaybe('Shield', undefined, Math.min(itemData.level, 9));
-	increaseBy = prestige.purchase ? prestige.newStatValue - itemData.blockCalculated * itemData.level : itemData.blockCalculated;
-	cost = prestige.purchase ? prestige.prestigeCost : itemData.cost.wood[0] * Math.pow(itemData.cost.wood[1], itemData.level) * getEquipPriceMult();
+	const maxWorkers = (extraTrimps) => employableWorkers(trimpsMax + extraTrimps, trimpsMax + extraTrimps);
+	const maxBreedable = (extraTrimps) => trimpsMax + extraTrimps - trimpsEffectivelyEmployed(maxWorkers(extraTrimps));
+	const maxBreeding = (extraTrimps) => maxBreedable(extraTrimps) - trimps.getCurrentSend();
+	const breedingRatio = (extraTrimps) => maxBreedable(0) / maxBreeding(extraTrimps);
 
-	upgradeObj.Shield = cost / increaseBy;
+	const name = mostEfficientHousing_beta('gems', true);
+	const popBonus = name ? getHousingBonus(name, true) : 0;
+	let gemCost = name ? getBuildingItemPrice(game.buildings[name], 'gems', false, 1) : 0;
+	let breedingImpact = breedingRatio(0) / breedingRatio(popBonus) - 1;
+	let efficiency = name ? gemCost / breedingImpact : Infinity;
 
-	return upgradeObj;
+	const housingEfficiency = efficiency;
+
+	const housing = {
+		name: name,
+		efficiency: maybePrettify(efficiency, pretty),
+		gemCost: maybePrettify(gemCost, pretty),
+		breedingImpact: maybePrettify(breedingImpact, pretty),
+		popBonus: maybePrettify(popBonus, pretty)
+	};
+
+	const potencyMod = _getPotencyMod();
+	const newPotencyMod = 1 + 1.01 * (potencyMod - 1);
+	gemCost = getBuildingItemPrice(game.buildings.Nursery, 'gems', false, 1);
+	breedingImpact = Math.log10(newPotencyMod) / Math.log10(potencyMod) - 1;
+	efficiency = gemCost / breedingImpact;
+
+	const nursery = {
+		name: 'Nursery',
+		efficiency: maybePrettify(efficiency, pretty),
+		gemCost: maybePrettify(gemCost, pretty),
+		breedingImpact: maybePrettify(breedingImpact, pretty)
+	};
+
+	return {
+		mostEfficient: efficiency < housingEfficiency ? 'Nursery' : 'Housing',
+		housing,
+		nursery
+	};
+}
+
+function _calcHSImpact(equipName, worldType = _getTargetWorldType(), difficulty = 1, prestigeInfo, hitsBefore) {
+	const extraAmount = prestigeInfo.shouldPrestige ? prestigeInfo.minNewLevel - 1 : 1;
+	const extraItem = new ExtraItem(equipName, extraAmount, prestigeInfo.shouldPrestige);
+	return hitsBefore === Infinity ? Infinity : calcHitsSurvived(game.global.world, worldType, difficulty, 0, extraItem, false) - hitsBefore;
+}
+
+function shieldGymEfficiency(hitsBefore = _getTargetWorldType() === 'void' ? hdStats.hitsSurvivedVoid : hdStats.hitsSurvived, pretty = false) {
+	if (game.global.universe !== 1 || game.global.soldierCurrentBlock === null) return { mostEfficient: 'Shield' };
+
+	const shieldBlock = game.equipment.Shield.blockNow;
+	const mapObj = game.global.mapsActive && !game.global.voidBuff ? getCurrentMapObject() : { level: game.global.world, location: undefined };
+	const zone = Math.max(game.global.world, mapObj.level);
+	const worldType = mapObj.location === 'Bionic' ? 'map' : _getTargetWorldType();
+	const difficulty = worldType === 'void' ? _getVoidPercent() : mapObj.location === 'Bionic' ? 2.6 : 1;
+
+	const itemData = game.equipment.Shield;
+	const stat = shieldBlock ? 'block' : 'health';
+	const zoneGo = zoneGoCheck(undefined, 'health', { location: worldType }).active;
+	const resourceSpendingPct = calculateResourceSpendingPct(zoneGo, 'health');
+	const prestige = buyPrestigeMaybe('Shield', resourceSpendingPct, itemData.level);
+	const shieldIncrease = _calcHSImpact('Shield', worldType, difficulty, prestige, hitsBefore);
+
+	const prestigeCost = () => (prestige.prestigeCost * (1 - Math.pow(1.2, prestige.minNewLevel))) / (1 - 1.2);
+	const levelCost = () => getBuildingItemPrice(itemData, 'wood', true, 1) * getEquipPriceMult();
+
+	const cantPrestige = !prestige.prestigeAvailable || !game.resources.gems.owned;
+	const equipCap = calculateEquipCap(stat, zoneGo);
+	const aboveEquipCap = itemData.level >= (prestige.prestigeAvailable ? Math.min(equipCap, 9) : equipCap);
+
+	let cost = prestige.shouldPrestige ? prestigeCost() : levelCost();
+	let hsImpact = shieldIncrease;
+	let efficiency = cantPrestige && aboveEquipCap ? Infinity : cost / shieldIncrease;
+
+	const prestigeNumeral = romanNumeral(itemData.prestige + (prestige.shouldPrestige ? 1 : 0));
+	const prestigeName = `Prestige ${prestigeNumeral} + Level ${prestige.minNewLevel}`;
+	const levelName = `${prestigeNumeral} Level ${itemData.level + 1}`;
+
+	const shieldEfficiency = efficiency;
+
+	const Shield = {
+		name: 'Shield ' + (prestige.shouldPrestige ? prestigeName : levelName),
+		efficiency: maybePrettify(efficiency, pretty),
+		cost: maybePrettify(cost, pretty),
+		hsImpact: maybePrettify(hsImpact, pretty),
+		shouldPrestige: prestige.shouldPrestige
+	};
+
+	const gymCost = getBuildingItemPrice(game.buildings.Gym, 'wood', false, 1) * getResourcefulMult();
+	const gymAmount = Math.ceil(cost / gymCost);
+	const gymXCost = getBuildingItemPrice(game.buildings.Gym, 'wood', false, gymAmount) * getResourcefulMult();
+
+	let gymIncrease, gymIncreaseAfterX, hitsAfter, hitsAfterX, efficiencyX;
+
+	hitsAfter = calcHitsSurvived(zone, worldType, difficulty, 1);
+	gymIncrease = hitsAfter === Infinity || hitsAfter === 0 ? Infinity : hitsAfter - hitsBefore;
+	efficiency = gymCost / gymIncrease;
+
+	let onlyOneGym = hitsAfter === Infinity || gymAmount <= 1;
+
+	if (!onlyOneGym) {
+		hitsAfterX = onlyOneGym ? hitsAfter : calcHitsSurvived(game.global.world, worldType, difficulty, gymAmount);
+		gymIncreaseAfterX = hitsAfterX === Infinity ? Infinity : hitsAfterX === 0 ? Infinity : hitsAfterX - hitsBefore;
+		efficiencyX = gymXCost / gymIncreaseAfterX;
+		onlyOneGym |= efficiency <= efficiencyX;
+	}
+
+	cost = onlyOneGym ? gymCost : gymXCost;
+	hsImpact = onlyOneGym ? gymIncrease : gymIncreaseAfterX;
+	efficiency = onlyOneGym ? efficiency : efficiencyX;
+
+	const Gym = {
+		name: 'Gym x' + (onlyOneGym ? 1 : gymAmount),
+		efficiency: maybePrettify(efficiency, pretty),
+		cost: maybePrettify(cost, pretty),
+		hsImpact: maybePrettify(hsImpact, pretty)
+	};
+
+	return {
+		mostEfficient: efficiency <= 0 && shieldEfficiency <= 0 ? 'None' : efficiency > shieldEfficiency ? 'Shield' : 'Gym',
+		Shield,
+		Gym
+	};
+}
+
+function biomeEfficiency(pretty = false, hitsBefore = _getTargetWorldType() === 'void' ? hdStats.hitsSurvivedVoid : hdStats.hitsSurvived, mostEffEquip = mostEfficientEquipment(undefined, undefined, true), shieldGymEff = shieldGymEfficiency()) {
+	if (game.global.universe !== 1 || game.global.decayDone || shieldGymEff.mostEfficient === 'None') return { biome: 'Mountain' };
+
+	const worldType = _getTargetWorldType();
+	let mostEff = mostEffEquip.health.name;
+	let name = mostEff;
+	let cost, hsImpact, efficiency;
+
+	if (mostEff) {
+		const difficulty = worldType === 'void' ? _getVoidPercent() : 1;
+		const zoneGo = zoneGoCheck(undefined, 'health', { location: worldType }).active;
+		const resourceSpendingPct = calculateResourceSpendingPct(zoneGo, 'health');
+
+		const obj = game.equipment[mostEff];
+		const prestige = buyPrestigeMaybe(mostEff, resourceSpendingPct, obj.level);
+
+		const prestigeCost = (prestige.prestigeCost * (1 - Math.pow(1.2, prestige.minNewLevel))) / (1 - 1.2);
+		const levelCost = getBuildingItemPrice(obj, 'metal', true, 1) * getEquipPriceMult();
+
+		cost = prestige.shouldPrestige ? prestigeCost : levelCost;
+		hsImpact = _calcHSImpact(mostEff, worldType, difficulty, prestige, hitsBefore);
+		efficiency = cost / hsImpact;
+	}
+
+	const metalEquipEfficiency = efficiency;
+
+	const metalEquip = {
+		name: name,
+		efficiency: maybePrettify(efficiency, pretty),
+		cost: maybePrettify(cost, pretty),
+		hsImpact: maybePrettify(hsImpact, pretty)
+	};
+
+	mostEff = shieldGymEff.mostEfficient;
+	name = shieldGymEff[mostEff].name;
+	cost = shieldGymEff[mostEff].cost;
+	hsImpact = shieldGymEff[mostEff].hsImpact;
+	efficiency = shieldGymEff[mostEff].efficiency;
+
+	const ShieldGym = {
+		name: name,
+		efficiency: maybePrettify(efficiency, pretty),
+		cost: maybePrettify(cost, pretty),
+		hsImpact: maybePrettify(hsImpact, pretty)
+	};
+
+	const hdToTargetRatio = (worldType === 'void' ? hdStats.hdRatioVoid : hdStats.hdRatio) / getPageSetting('mapBonusRatio');
+	const hsToTargetRatio = hitsBefore / targetHitsSurvived(false, worldType);
+
+	// TODO Maybe this value should consider hsToTargetRatio too, and maybe AE: HS and AE: HD too
+	let metalEffRatio = hdToTargetRatio > 1 ? 2.5 : 1;
+
+	// TODO Refactor this after considering the TODOs below
+	if (!metalEquip.name) {
+		if (!mostEffEquip.attack.name) metalEffRatio = 0;
+		else if (hdToTargetRatio > 1 && hsToTargetRatio < 1) metalEffRatio = Infinity; /* Need both - TODO compare ShieldGym hsEfficiency vs metalEquip hdEfficiency instead */
+		else if (hdToTargetRatio > 1) metalEffRatio = Infinity; /* Need damage */
+		else if (hsToTargetRatio < 1) metalEffRatio = 0; /* Need health */
+		else metalEffRatio = Infinity; /* Need nothing - TODO Maybe compare AE: HS target vs AE: HD target at this point? */
+	}
+
+	const mostEfficient = efficiency * metalEffRatio < metalEquipEfficiency || !metalEffRatio ? ShieldGym.name : metalEquip.name || mostEffEquip.attack.name || 'attack';
+	const biome = mostEfficient === ShieldGym.name ? 'Forest' : 'Mountain';
+
+	return {
+		biome,
+		mostEfficient,
+		metalEquip,
+		ShieldGymEff: ShieldGym,
+		metalEffRatio
+	};
+}
+
+function ceilToNearestMultipleOf(number, multipleOf, offSet) {
+	const n = number - offSet;
+	const roundedUp = Math.ceil(n / multipleOf) * multipleOf;
+	return roundedUp + offSet;
 }
 
 function argSort(array, reverseStability = false) {
@@ -650,7 +881,7 @@ function elementExists(element) {
 }
 
 function elementVisible(element) {
-	visible = document.getElementById(element).style.visibility !== 'hidden';
+	let visible = document.getElementById(element).style.visibility !== 'hidden';
 	return elementExists(element) && visible;
 }
 
@@ -659,15 +890,60 @@ function getCurrentQuest() {
 	if (game.global.world < game.challenges.Quest.getQuestStartZone()) return 0;
 
 	const questProgress = game.challenges.Quest.getQuestProgress();
-	const questDescription = game.challenges.Quest.getQuestDescription();
-
 	if (questProgress === 'Failed!' || questProgress === 'Quest Complete!') return 0;
 
+	const questDescription = game.challenges.Quest.getQuestDescription();
 	const resourceMultipliers = ['food', 'wood', 'metal', 'gems', 'science'];
 	const resourceIndex = resourceMultipliers.findIndex((resource) => questDescription.includes(resource));
 	if (resourceIndex !== -1) return resourceIndex + 1;
 
 	const otherQuests = ['Complete 5 Maps at Zone level', 'One-shot 5 world enemies', "Don't let your shield break before Cell 100", "Don't run a map before Cell 100", 'Buy a Smithy'];
 	const otherIndex = otherQuests.findIndex((quest) => questDescription === quest);
+
 	return otherIndex !== -1 ? otherIndex + 6 : 0;
+}
+
+function displayMostEfficientBuilding(forceUpdate = false) {
+	if (!atSettings.intervals.oneSecond && !forceUpdate) return;
+	if (!game.buildings.Hub.locked || !getPageSetting('buildingMostEfficientDisplay')) return;
+
+	const foodHousing = ['Hut', 'House'];
+	const gemHousing = ['Mansion', 'Hotel', 'Resort', 'Gateway', 'Collector', 'Warpstation'];
+
+	bestFoodHousing = mostEfficientHousing_beta('food', true);
+	bestGemHousing = mostEfficientHousing_beta('gems', true);
+
+	gemHousing
+		.map((name) => ({ mostEff: name === bestGemHousing, elem: document.getElementById(name) }))
+		.filter((house) => house.elem)
+		.forEach((house) => _updateMostEfficientDisplay(house.elem, house.mostEff));
+
+	foodHousing
+		.map((name) => ({ mostEff: name === bestFoodHousing, elem: document.getElementById(name) }))
+		.filter((house) => house.elem)
+		.forEach((house) => _updateMostEfficientDisplay(house.elem, house.mostEff));
+}
+
+function displayShieldGymEfficiency(forceUpdate = false) {
+	if (!atSettings.intervals.oneSecond && !forceUpdate) return;
+	if (game.equipment.Shield.locked) return;
+	if (!getPageSetting('shieldGymMostEfficientDisplay')) return;
+
+	const shieldGymResults = hdStats.shieldGymEff;
+	const shieldOrGym = shieldGymResults.mostEfficient;
+
+	const prestigeElement = document.getElementById('Supershield');
+	let shieldElement = document.getElementById('Shield');
+	let gymElement = document.getElementById('Gym');
+
+	if (game.upgrades.Supershield.locked === 0 && prestigeElement) _updateMostEfficientDisplay(prestigeElement, shieldOrGym === 'Shield' && shieldGymResults.Shield.shouldPrestige);
+	if (shieldElement) _updateMostEfficientDisplay(shieldElement, shieldOrGym === 'Shield' && !shieldGymResults.Shield.shouldPrestige);
+	if (!game.buildings.Gym.locked && gymElement) _updateMostEfficientDisplay(gymElement, shieldOrGym === 'Gym');
+}
+
+function _updateMostEfficientDisplay(element, mostEfficient) {
+	if (!element.classList.contains('efficient')) element.classList.add('efficient');
+	if (element.classList.contains('efficientNo') && mostEfficient) return swapClass('efficient', 'efficientYes', element);
+	if (element.classList.contains('efficientYes') && !mostEfficient) return swapClass('efficient', 'efficientNo', element);
+	swapClass('efficient', mostEfficient ? 'efficientYes' : 'efficientNo', element);
 }

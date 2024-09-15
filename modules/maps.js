@@ -7,156 +7,90 @@ MODULES.maps = {
 	mapRepeats: 0,
 	mapRepeatsSmithy: [0, 0, 0],
 	mapTimer: 0,
-	lastMapWeWereIn: null,
+	lastMapWeWereIn: getCurrentMapObject() || { id: 0 },
 	fragmentCost: Infinity
 };
 
-function autoMapsStatus(get) {
-	let status = '';
+function autoMapsStatus(get = false) {
 	const mapObj = getCurrentMapObject();
-	//Setting up status
-	if (!game.global.mapsUnlocked) status = 'Maps not unlocked!';
-	else if (game.global.mapsActive && mapObj.noRecycle && mapObj.location !== 'Bionic' && mapObj.location !== 'Void' && mapSettings.mapName !== 'Quagmire Farm' && mapObj.location !== 'Darkness') status = mapObj.name;
-	else if (challengeActive('Mapology') && game.challenges.Mapology.credits < 1) status = 'Out of Map Credits';
-	else if (mapSettings.mapName !== '') status = mapSettings.status;
-	//Advancing
-	else status = 'Advancing';
+	let status = '';
 
-	if (getPageSetting('autoMaps') === 0) status = '[Auto Maps Off] ' + status;
-
-	if (usingRealTimeOffline && getPageSetting('timeWarpDisplay')) {
-		const { startTime, ticksProcessed, progressMax } = offlineProgress;
-		const barWidth = ((ticksProcessed / progressMax) * 100).toFixed(1) + '%';
-		const timeSpent = Math.floor((new Date().getTime() - startTime) / 1000);
-		const speed = ticksProcessed / (timeSpent * 10);
-		status = `Time Warp (${barWidth} ${prettify(speed)}x)<br>${status}`;
+	if (!game.global.mapsUnlocked) {
+		status = 'Maps not unlocked!';
+	} else if (game.global.mapsActive && mapObj.noRecycle && !['Bionic', 'Void', 'Darkness'].includes(mapObj.location)) {
+		status = mapObj.name;
+	} else if (mapSettings.mapName !== '') {
+		status = mapSettings.status;
+	} else {
+		status = 'Advancing';
 	}
 
-	let resourceType = game.global.universe === 1 ? 'Helium' : 'Radon';
-	let resourceShortened = game.global.universe === 1 ? 'He' : 'Rn';
-	let getPercent = (game.stats.heliumHour.value() / (game.global['total' + resourceType + 'Earned'] - game.resources[resourceType.toLowerCase()].owned)) * 100;
-	let lifetime = (game.resources[resourceType.toLowerCase()].owned / (game.global['total' + resourceType + 'Earned'] - game.resources[resourceType.toLowerCase()].owned)) * 100;
+	if (challengeActive('Mapology') && game.challenges.Mapology.credits < 1) status = `Out of Map Credits ${status}`;
+	if (getPageSetting('autoMaps') === 0) status = `[Auto Maps Off] ${status}`;
+
+	if (usingRealTimeOffline && getPageSetting('timeWarpDisplay')) {
+		const { ticksProcessed, progressMax } = offlineProgress;
+		const progressPercentage = ((ticksProcessed / progressMax) * 100).toFixed(1);
+		status = `Time Warp (${progressPercentage}%)<br>${status}`;
+	}
+
+	const resourceType = game.global.universe === 1 ? 'Helium' : 'Radon';
+	const resourceShortened = game.global.universe === 1 ? 'He' : 'Rn';
+	const resourceOwned = game.resources[resourceType.toLowerCase()].owned;
+	const resourceEarned = game.global[`total${resourceType}Earned`];
+
+	const getPercent = (game.stats.heliumHour.value() / (resourceEarned - resourceOwned)) * 100;
+	const lifetime = (resourceOwned / (resourceEarned - resourceOwned)) * 100;
 
 	if (get) {
+		status = status.replace(/<br>/g, '\n').replace(/&nbsp;/g, ' ');
 		return [status, getPercent, lifetime];
 	}
 
 	//Set auto maps status when inside of TW
 	if (usingRealTimeOffline && !getPageSetting('timeWarpDisplay') && document.getElementById('autoMapStatusTW') !== null) {
 		//Add in a header for the status to let the user know what it is
-		let statusMsg = '<h9>Auto Maps Status</h9><br>' + status;
-		let id = game.global.mapsActive ? 'autoMapStatusMapsTW' : 'autoMapStatusTW';
-		if (document.getElementById(id).innerHTML !== status) document.getElementById(id).innerHTML = statusMsg;
-		document.getElementById(id).setAttribute('onmouseover', makeAutomapStatusTooltip(true));
+		const statusMsg = '<h9>Auto Maps Status</h9><br>' + status;
+		const id = game.global.mapsActive ? 'autoMapStatusMapsTW' : 'autoMapStatusTW';
+		const autoMapsElem = document.getElementById(id);
+		if (autoMapsElem && autoMapsElem.innerHTML !== status) autoMapsElem.innerHTML = statusMsg;
+		autoMapsElem.setAttribute('onmouseover', makeAutomapStatusTooltip(true));
 	}
+
+	const timeWarpUpdate = !usingRealTimeOffline || getPageSetting('timeWarpDisplay');
 
 	//Set auto maps status when outside of TW
-	if ((!usingRealTimeOffline || getPageSetting('timeWarpDisplay')) && document.getElementById('autoMapStatus') !== null) {
-		if (document.getElementById('autoMapStatus').innerHTML !== status) document.getElementById('autoMapStatus').innerHTML = status;
-		document.getElementById('autoMapStatus').setAttribute('onmouseover', makeAutomapStatusTooltip(true));
-	}
+	if (timeWarpUpdate) {
+		const autoMapsElem = document.getElementById('autoMapStatus');
+		if (autoMapsElem !== null) {
+			if (autoMapsElem.innerHTML !== status) autoMapsElem.innerHTML = status;
+			autoMapsElem.setAttribute('onmouseover', makeAutomapStatusTooltip(true));
+		}
 
-	//Set hider (he/hr) status when outside of TW
-	if (getPageSetting('displayHeHr') && (!usingRealTimeOffline || getPageSetting('timeWarpDisplay')) && document.getElementById('hiderStatus') !== null) {
-		let hiderStatus = resourceShortened + '/hr: ' + (getPercent > 0 ? getPercent.toFixed(3) : 0) + '%<br>&nbsp;&nbsp;&nbsp;' + resourceShortened + ': ' + (lifetime > 0 ? lifetime.toFixed(3) : 0) + '%';
-		if (document.getElementById('hiderStatus').innerHTML !== hiderStatus) document.getElementById('hiderStatus').innerHTML = hiderStatus;
-		document.getElementById('hiderStatus').setAttribute('onmouseover', makeResourceTooltip(true));
-	}
+		const heHrElem = document.getElementById('heHrStatus');
+		if (heHrElem !== null && getPageSetting('displayHideAutoButtons').ATheHr) {
+			const heHrStatus = `${resourceShortened}/hr: ${getPercent > 0 ? getPercent.toFixed(3) : 0}%<br>&nbsp;&nbsp;&nbsp;${resourceShortened}: ${lifetime > 0 ? lifetime.toFixed(3) : 0}%`;
+			if (heHrElem.innerHTML !== heHrStatus) heHrElem.innerHTML = heHrStatus;
+			heHrElem.setAttribute('onmouseover', makeResourceTooltip(true));
+		}
 
-	//Additional Info tooltip
-	if ((!usingRealTimeOffline || getPageSetting('timeWarpDisplay')) && document.getElementById('additionalInfo') !== null) {
-		let infoStatus = makeAdditionalInfo();
-		if (document.getElementById('additionalInfo').innerHTML !== infoStatus) document.getElementById('additionalInfo').innerHTML = infoStatus;
-		document.getElementById('additionalInfo').parentNode.setAttribute('onmouseover', makeAdditionalInfoTooltip(true));
-	}
-}
-
-function makeAutomapStatusTooltip(mouseover) {
-	const mapStacksText = `Will run maps to get up to <i>${getPageSetting('mapBonusStacks')}</i> stacks when World HD Ratio is greater than <i>${prettify(getPageSetting('mapBonusRatio'))}</i>.`;
-	const hdRatioText = 'HD Ratio is enemyHealth to yourDamage ratio, effectively hits to kill an enemy. The enemy health check is based on the highest health enemy in the map/zone.';
-	let hitsSurvivedText = `Hits Survived is the ratio of hits you can survive against the highest damaging enemy in the map/zone${game.global.universe === 1 ? ' (subtracts Trimp block from that value)' : ''}.`;
-	const hitsSurvived = prettify(hdStats.hitsSurvived);
-	const hitsSurvivedVoid = prettify(hdStats.hitsSurvivedVoid);
-	const hitsSurvivedSetting = targetHitsSurvived();
-	const hitsSurvivedValue = hitsSurvivedSetting > 0 ? hitsSurvivedSetting : '∞';
-	let tooltipText = '';
-
-	if (mouseover) {
-		tooltipText = 'tooltip(' + '"Automaps Status", ' + '"customText", ' + 'event, ' + '"';
-	}
-	tooltipText += 'Variables that control the current state and target of Automaps.<br>' + 'Values in <b>bold</b> are dynamically calculated based on current zone and activity.<br>' + 'Values in <i>italics</i> are controlled via AT settings (you can change them).<br>';
-	if (game.global.universe === 2) {
-		if (!game.portal.Equality.radLocked)
-			tooltipText += `<br>\
-		If you have the Auto Equality setting set to <b>Auto Equality: Advanced</b> then all calculations will factor expected equality value into them.<br>`;
-	}
-	//Hits Survived
-	tooltipText += `<br>` + `<b> Hits Survived info</b > <br>` + `${hitsSurvivedText}<br>` + `Hits Survived: <b>${hitsSurvived}</b> / <i>${hitsSurvivedValue}</i><br>` + `Void Hits Survived: <b>${hitsSurvivedVoid}</b><br>`;
-
-	//Map Setting Info
-	tooltipText += `<br>` + `<b>Mapping info</b><br>`;
-	if (mapSettings.shouldRun) {
-		tooltipText += `Farming Setting: <b>${mapSettings.mapName}</b><br>`;
-		tooltipText += `Map level: <b>${mapSettings.mapLevel}</b><br>`;
-		tooltipText += `Auto level: <b>${mapSettings.autoLevel}</b><br>`;
-		if (mapSettings.settingIndex) tooltipText += `Line run: <b>${mapSettings.settingIndex}</b>${mapSettings.priority ? ` Priority: <b>${mapSettings.priority}</b>` : ``}<br>`;
-		tooltipText += `Special: <b>${mapSettings.special !== undefined && mapSettings.special !== '0' ? mapSpecialModifierConfig[mapSettings.special].name : 'None'}</b > <br>`;
-		tooltipText += `Wants to run: ${mapSettings.shouldRun}<br>`;
-		tooltipText += `Repeat: ${mapSettings.repeat}<br>`;
-	} else {
-		tooltipText += `Not running<br>`;
-	}
-
-	//HD Ratios
-	tooltipText += '<br>' + `<b>HD Ratio Info</b><br>` + `${hdRatioText}<br>` + `World HD Ratio ${game.global.universe === 1 ? '(in X formation)' : ''} <b>${prettify(hdStats.hdRatio)}</b><br>` + `Map HD Ratio ${game.global.universe === 1 ? '(in X formation)' : ''} <b>${prettify(hdStats.hdRatioMap)}</b><br>` + `Void HD Ratio ${game.global.universe === 1 ? '(in X formation)' : ''} <b>${prettify(hdStats.hdRatioVoid)}</b><br>` + `${mapStacksText}<br>`;
-
-	if (mouseover) {
-		tooltipText += '")';
-		return tooltipText;
-	} else {
-		tooltip('Auto Maps Status', 'customText', 'lock', tooltipText, false, 'center');
-		_verticalCenterTooltip(true);
+		const infoElem = document.getElementById('additionalInfo');
+		if (infoElem !== null) {
+			const infoStatus = makeAdditionalInfo();
+			if (infoElem.innerHTML !== infoStatus) infoElem.innerHTML = infoStatus;
+			infoElem.parentNode.setAttribute('onmouseover', makeAdditionalInfoTooltip(true));
+		}
 	}
 }
 
-function makeResourceTooltip(mouseover) {
-	const resource = game.global.universe === 2 ? 'Radon' : 'Helium';
-	const resourceHr = game.global.universe === 2 ? 'Rn' : 'He';
-
-	let getPercent = (game.stats.heliumHour.value() / (game.global['total' + resource + 'Earned'] - game.resources[resource.toLowerCase()].owned)) * 100;
-	let lifetime = (game.resources[resource.toLowerCase()].owned / (game.global['total' + resource + 'Earned'] - game.resources[resource.toLowerCase()].owned)) * 100;
-	const resourceHrMsg = getPercent > 0 ? getPercent.toFixed(3) : 0;
-	const lifeTimeMsg = (lifetime > 0 ? lifetime.toFixed(3) : 0) + '%';
-
-	let tooltipText = '';
-
-	if (mouseover) {
-		tooltipText = 'tooltip(' + `\"${resource} per hour Info\",` + '"customText", ' + 'event, ' + '"';
-	}
-	tooltipText += `<b>${resource} per hour</b>: ${resourceHrMsg}<br>` + `Current ${resource} per hour % out of Lifetime ${resourceHr} (not including current+unspent).<br> 0.5% is an ideal peak target. This can tell you when to portal... <br>` + `<b>${resource}</b>: ${lifeTimeMsg}<br>` + `Current run total ${resource} / earned / lifetime ${resourceHr} (not including current)<br>`;
-
-	if (trimpStats.isDaily) {
-		let helium = game.stats.heliumHour.value() / (game.global['total' + resource + 'Earned'] - (game.global[resource.toLowerCase() + 'Leftover'] + game.resources[resource.toLowerCase()].owned));
-		helium *= 100 + getDailyHeliumValue(countDailyWeight());
-		tooltipText += `<b>After Daily ${resource} per hour</b>: ${helium.toFixed(3)}%`;
-	}
-
-	if (mouseover) {
-		tooltipText += '")';
-		return tooltipText;
-	} else {
-		tooltip(`${resource} per hour info`, 'customText', 'lock', tooltipText, false, 'center');
-		_verticalCenterTooltip(true);
-	}
-}
-
-function findMap(level = 0, special = getAvailableSpecials('lmc'), biome = getBiome(), perfect = getPageSetting('onlyPerfectMaps')) {
+function findMap(level = 0, special = getAvailableSpecials('lmc'), biome = getBiome(), perfect = getPageSetting('onlyPerfectMaps'), isTricky = false) {
+	let sendTricky = false;
 	let mapLoot = biome === 'Farmlands' ? 2.6 : biome === 'Plentiful' ? 1.85 : 1.6;
 	if (game.singleRunBonuses.goldMaps.owned) mapLoot += 1;
 
 	for (let mapping in game.global.mapsOwnedArray) {
 		const map = game.global.mapsOwnedArray[mapping];
-		let effectiveBiome = map.name === 'Tricky Paradise' && game.resources.fragments.owned < 100 ? 'Plentiful' : biome;
+		let effectiveBiome = map.name === 'Tricky Paradise' && game.resources.fragments.owned < 600 ? 'Plentiful' : biome;
 		if (map.location !== effectiveBiome && effectiveBiome !== 'Random') continue;
 		if (perfect) {
 			if (map.size > trimpStats.mapSize) continue;
@@ -166,15 +100,27 @@ function findMap(level = 0, special = getAvailableSpecials('lmc'), biome = getBi
 		if (game.global.world + level !== map.level) continue;
 		if (map.bonus !== special && special !== '0') continue;
 		if (map.noRecycle) continue;
-		return map.id;
+		if (map.name === 'Tricky Paradise') sendTricky = map.id;
+		else return map.id;
 	}
 
-	return false;
+	if (isTricky && sendTricky) return 'Tricky Paradise';
+	return sendTricky;
 }
 
 //Looks to see if we currently have a map that matches the criteria we want to run if not tells us to create a new one
 function shouldFarmMapCreation(level, special, biome) {
-	const mapCheck = findMap(level, special, biome);
+	let mapCheck = findMap(level, special, biome);
+
+	if (!mapCheck) {
+		const simulatedPurchase = _simulateSliders(level + game.global.world, special, biome);
+
+		if (simulatedPurchase.location === biome && simulatedPurchase.special === special && simulatedPurchase.mapLevel === level) {
+			return 'create';
+		} else {
+			mapCheck = findMap(level, '0', 'Random');
+		}
+	}
 
 	if (mapCheck) return mapCheck;
 	else return 'create';
@@ -192,8 +138,8 @@ function shouldAbandon(zoneCheck = true) {
 	return false;
 }
 
-function _noMappingChallenges(ignoreChallenge) {
-	if (noBreedChallenge()) return true;
+function _noMappingChallenges(ignoreChallenge, mapping = false) {
+	if (noBreedChallenge(mapping)) return true;
 	if (!ignoreChallenge && challengeActive('Mapology')) return true;
 	if (challengeActive('Exterminate')) return true;
 }
@@ -204,13 +150,14 @@ function decaySkipMaps() {
 
 	const challenge = game.challenges[challengeName];
 	const currentStacks = challenge ? challenge.stacks : 0;
-	const stacksToPush = getPageSetting('decayStacksToPush');
+	const maxStacks = challengeName === 'Melt' ? 500 : 999;
+	const stacksToPush = Math.min(getPageSetting('decayStacksToPush'), maxStacks);
 
-	return stacksToPush > 0 && currentStacks > stacksToPush;
+	return stacksToPush > 0 && currentStacks >= stacksToPush;
 }
 
 function _leadDisableMapping() {
-	if (!challengeActive('Lead') || !getPageSetting('lead') || game.global.spireActive) return false;
+	if (game.global.spireActive || !challengeActive('Lead') || !getPageSetting('lead')) return false;
 
 	const oddZone = game.global.world % 2 !== 0;
 	const aboveCell90 = game.global.lastClearedCell + 2 > 90 || liquifiedZone();
@@ -227,7 +174,7 @@ function _berserkDisableMapping() {
 }
 
 function autoMaps() {
-	if (!getPageSetting('autoMaps') || !game.global.mapsUnlocked) return;
+	if (!game.global.mapsUnlocked || !getPageSetting('autoMaps')) return;
 
 	if (_checkSitInMaps()) return;
 
@@ -251,26 +198,27 @@ function autoMaps() {
 		return;
 	}
 
-	if (_vanillaMAZ()) return;
+	const mapObj = getCurrentMapObject();
+	if (_vanillaMAZ(mapObj)) return;
 
 	_autoMapsDefaults();
 
-	const mapObj = _checkOwnedMaps();
+	const mapsOwned = _checkOwnedMaps();
 
-	_searchForUniqueMaps(mapObj.uniqueMapsOwned, mapObj.runUnique);
+	_searchForUniqueMaps(mapsOwned.uniqueMapsOwned, mapsOwned.runUnique);
 
-	mapObj.selectedMap = _setSelectedMap(mapObj.selectedMap, mapObj.voidMap, mapObj.optimalMap);
+	mapsOwned.selectedMap = _setSelectedMap(mapsOwned.selectedMap, mapsOwned.voidMap, mapsOwned.optimalMap);
 
-	if (game.global.mapsActive) _setMapRepeat();
+	if (game.global.mapsActive) _setMapRepeat(mapObj);
 
-	if (!game.global.preMapsActive && !game.global.mapsActive && mapObj.selectedMap !== 'world') {
+	if (!game.global.preMapsActive && !game.global.mapsActive && mapsOwned.selectedMap !== 'world') {
 		if (!game.global.switchToMaps && shouldAbandon()) mapsClicked();
 		if (game.global.switchToMaps) mapsClicked();
 	}
 
-	if (game.global.preMapsActive) _autoMapsCreate(mapObj);
+	if (game.global.preMapsActive) _autoMapsCreate(mapsOwned);
 
-	_slowScumCheck();
+	_slowScumCheck(mapObj);
 }
 
 function prettifyMap(map) {
@@ -315,7 +263,7 @@ function _fragmentCheck(highestMap, runUnique) {
 	}
 }
 
-function _vanillaMAZ() {
+function _vanillaMAZ(mapObj = getCurrentMapObject()) {
 	if (!game.options.menu.mapAtZone.enabled || !game.global.canMapAtZone) return false;
 
 	const nextCell = game.global.lastClearedCell + 2;
@@ -373,14 +321,12 @@ function _lifeMapping() {
 }
 
 function _autoMapsDefaults() {
-	while ([1, 2, 3].includes(game.options.menu.repeatUntil.enabled) && !game.global.mapsActive && !game.global.preMapsActive) toggleSetting('repeatUntil');
-	if (game.options.menu.exitTo.enabled) toggleSetting('exitTo');
-	if (game.options.menu.repeatVoids.enabled) toggleSetting('repeatVoids');
-
-	//Reset to defaults when on world grid
 	if (!game.global.mapsActive && !game.global.preMapsActive) {
 		game.global.mapRunCounter = 0;
 		MODULES.maps.mapTimer = 0;
+	} else {
+		if (game.options.menu.exitTo.enabled) toggleSetting('exitTo');
+		if (mapSettings.mapName === 'Void Maps' && game.options.menu.repeatVoids.enabled) toggleSetting('repeatVoids');
 	}
 }
 
@@ -399,7 +345,7 @@ function _checkOwnedMaps() {
 	const runUniques = getPageSetting('autoMaps') === 1 && !_insanityDisableUniqueMaps();
 	const perfSize = game.talents.mapLoot2.purchased ? 20 : 25;
 	const perfMapLoot = game.global.farmlandsUnlocked && game.singleRunBonuses.goldMaps.owned ? 3.6 : game.global.decayDone && game.singleRunBonuses.goldMaps.owned ? 2.85 : game.global.farmlandsUnlocked ? 2.6 : game.global.decayDone ? 1.85 : 1.6;
-	const mapBiome = mapSettings.biome !== undefined ? mapSettings.biome : getBiome();
+	const mapBiome = mapSettings.biome !== undefined && mapSettings.biome !== 'Any' ? mapSettings.biome : getBiome();
 
 	//Looping through all of our maps to find the highest, lowest and optimal map.
 	for (const map of game.global.mapsOwnedArray) {
@@ -443,7 +389,25 @@ function _searchForUniqueMaps(mapsOwned, runUnique = true) {
 		.filter((mapName) => MODULES.mapFunctions.uniqueMaps[mapName].mapUnlock)
 		.filter((mapName) => MODULES.mapFunctions.uniqueMaps[mapName].zone <= game.global.world + (trimpStats.plusLevels ? 10 : 0));
 
-	//Loop through unique map settings and obtain any unique maps that are to be run but aren't currently owned.
+	let challengeMap = 'none';
+	if (challengeActive('Scientist')) challengeMap = 'The Block';
+	/* else if (challengeActive('Electricity') || challengeActive('Mapocalypse')) challengeMap = 'The Prison'; */
+
+	if (challengeMap !== 'none' && !mapsOwned.includes(challengeMap) && !uniqueMapsToGet.includes(challengeMap)) {
+		const mapDetails = MODULES.mapFunctions.uniqueMaps[challengeMap];
+
+		if (game.global.world >= mapDetails.zone) {
+			mapDetails.name = challengeMap;
+			mapDetails.location = 'map';
+			mapDetails.size = mapDetails.name === 'The Black Bog' ? 150 : 100;
+			mapDetails.level = mapDetails.zone;
+
+			const canFinishChallenge = enoughHealth(mapDetails);
+			if (canFinishChallenge) uniqueMapsToGet.push(challengeMap);
+		}
+	}
+
+	/* Loop through unique map settings and obtain any unique maps that are to be run but aren't currently owned. */
 	if (!runUnique && uniqueMapsToGet.length > 0) mapSettings = _obtainUniqueMap(uniqueMapsToGet.sort((a, b) => MODULES.mapFunctions.uniqueMaps[b].zone - MODULES.mapFunctions.uniqueMaps[a].zone)[0]);
 }
 
@@ -454,7 +418,7 @@ function _setSelectedMap(selectedMap, voidMap, optimalMap) {
 		else if (mapSettings.mapName === 'Bionic Raiding') selectedMap = 'bionicRaid';
 		else if (optimalMap) selectedMap = optimalMap.id;
 		else {
-			const mapBiome = mapSettings.biome !== undefined ? mapSettings.biome : getBiome();
+			const mapBiome = mapSettings.biome !== undefined && mapSettings.biome !== 'Any' ? mapSettings.biome : getBiome();
 			selectedMap = shouldFarmMapCreation(mapSettings.mapLevel, mapSettings.special, mapBiome);
 		}
 		if (MODULES.maps.mapTimer === 0) MODULES.maps.mapTimer = getZoneSeconds();
@@ -463,35 +427,45 @@ function _setSelectedMap(selectedMap, voidMap, optimalMap) {
 	return selectedMap;
 }
 
-function _setMapRepeat() {
-	const mapObj = getCurrentMapObject();
-
+function _setMapRepeat(mapObj = getCurrentMapObject()) {
 	if ((!mapObj.noRecycle && mapSettings.shouldRun) || mapSettings.mapName === 'Bionic Raiding' || (mapSettings.mapName === 'Quagmire Farm' && mapObj.name === 'The Black Bog')) {
 		if (!game.global.repeatMap) repeatClicked();
-
-		//Changing repeat setting to Repeat For Items if Presitge or Bionic Raiding, otherwise set to Repeat Forever
+		let repeatSetting = 0; /* Repeat Forever */
 		if (mapSettings.shouldRun && ((mapSettings.mapName === 'Prestige Raiding' && !mapSettings.prestigeFragMapBought) || mapSettings.mapName === 'Bionic Raiding')) {
-			if (game.options.menu.repeatUntil.enabled !== 2) {
-				game.options.menu.repeatUntil.enabled = 2;
-				toggleSetting('repeatUntil', null, false, true);
-			}
-		} else if (game.options.menu.repeatUntil.enabled !== 0) {
-			game.options.menu.repeatUntil.enabled = 0;
+			repeatSetting = 2; /* Repeat for Items */
+		}
+
+		if (game.options.menu.repeatUntil.enabled !== repeatSetting) {
+			game.options.menu.repeatUntil.enabled = repeatSetting;
 			toggleSetting('repeatUntil', null, false, true);
 		}
 
 		if (!mapSettings.shouldRun) repeatClicked();
+		if (game.global.repeatMap && mapSettings.biome && mapSettings.biome === 'Any' && mapObj.location === 'Forest') repeatClicked();
 		if (game.global.repeatMap && MODULES.mapFunctions.runUniqueMap) repeatClicked();
-		if (game.global.repeatMap && challengeActive('Experience') && mapObj.location === 'Bionic' && game.global.world > 600 && mapObj.level >= 605) repeatClicked();
+		if (game.global.repeatMap && challengeActive('Experience') && mapObj.location === 'Bionic' && game.global.world > 600 && mapObj.level >= 605 && getPageSetting('experience')) repeatClicked();
 		if (mapSettings.prestigeFragMapBought && game.global.repeatMap) prestigeRaidingMapping();
 
 		if (game.global.repeatMap && !mapSettings.prestigeFragMapBought) {
 			if (mapSettings.mapName === 'Prestige Raiding' || mapSettings.mapName === 'Bionic Raiding') {
 				if (!mapSettings.repeat) repeatClicked();
 			} else {
-				const mapLevel = typeof mapSettings.mapLevel !== 'undefined' ? mapObj.level - game.global.world : mapSettings.mapLevel;
-				const mapSpecial = typeof mapSettings.special !== 'undefined' && mapSettings.special !== '0' ? mapObj.bonus : mapSettings.special;
-				if (!mapSettings.repeat || mapLevel !== mapSettings.mapLevel || mapSpecial !== mapSettings.special) repeatClicked();
+				const { mapLevel, special, biome = getBiome() } = mapSettings;
+				const runTricky = game.global.world + mapLevel === 6 && findMap(mapLevel, special, biome, undefined, true) === 'Tricky Paradise';
+
+				const level = mapLevel !== undefined ? mapObj.level - game.global.world : mapLevel;
+				const mapSpecial = special && special === '0' ? '0' : special !== undefined ? mapObj.bonus : special;
+				const mapBiome = mapObj.location;
+				const isBiomeDifferent = mapBiome !== biome && !runTricky && !['Any', 'Random'].includes(biome);
+
+				if (!mapSettings.repeat) {
+					repeatClicked();
+				} else if (level !== mapLevel || (mapSpecial && mapSpecial !== special) || isBiomeDifferent) {
+					simulatedPurchase = _simulateSliders(mapLevel + game.global.world, special, biome);
+					if (simulatedPurchase.special === special && simulatedPurchase.mapLevel === mapLevel && simulatedPurchase.location === biome) {
+						repeatClicked();
+					}
+				}
 			}
 		}
 	} else if (game.global.repeatMap) {
@@ -512,13 +486,10 @@ function _purchaseMap(lowestMap) {
 		const mapCost = updateMapCost(true);
 		debug(`Bought ${prettifyMap(game.global.mapsOwnedArray[game.global.mapsOwnedArray.length - 1])}. Spent ${prettify(mapCost)}/${prettify(game.resources.fragments.owned + mapCost)} (${((mapCost / (game.resources.fragments.owned + mapCost)) * 100).toFixed(2)}%) fragments.`, 'maps', 'th-large');
 		runMap();
-		MODULES.maps.lastMapWeWereIn = getCurrentMapObject();
 	}
 }
 
 function _autoMapsCreate(mapObj) {
-	//Recycling maps below world level if 95 or more are owned as the cap is 100.
-	const mapBiome = mapSettings.biome !== undefined ? mapSettings.biome : getBiome();
 	if (game.global.mapsOwnedArray.length >= 95) recycleBelow(true);
 
 	if (mapObj.selectedMap === 'world') {
@@ -530,8 +501,10 @@ function _autoMapsCreate(mapObj) {
 	} else if (mapObj.selectedMap === 'create') {
 		_abandonMapCheck(mapObj.selectedMap, mapObj.runUnique);
 		if (mapSettings.shouldRun && mapSettings.mapName !== '') {
+			const mapBiome = mapSettings.biome !== undefined && mapSettings.biome !== 'Any' ? mapSettings.biome : getBiome();
 			setMapSliders(mapSettings.mapLevel, mapSettings.special, mapBiome, mapSettings.mapSliders, getPageSetting('onlyPerfectMaps'));
 		}
+
 		if (updateMapCost(true) > game.resources.fragments.owned) {
 			if (_fragmentCheck(mapObj.highestMap, mapObj.runUnique)) return;
 		} else {
@@ -545,12 +518,20 @@ function _autoMapsCreate(mapObj) {
 //Before we create a map check if we are currently in a map and if it doesn't match our farming type then recycle it.
 function _abandonMapCheck(selectedMap = null, runUnique) {
 	if (mapSettings.mapName === 'Desolation Gear Scum' && game.global.lastClearedCell + 2 === 1) return;
+
 	if (game.global.currentMapId !== '') {
 		//If we don't have info on the previous map then set it.
-		if (MODULES.maps.lastMapWeWereIn === null) MODULES.maps.lastMapWeWereIn = game.global.mapsOwnedArray[getMapIndex(game.global.currentMapId)];
+		if (MODULES.maps.lastMapWeWereIn.id === 0 || MODULES.maps.lastMapWeWereIn.id !== game.global.currentMapId) MODULES.maps.lastMapWeWereIn = game.global.mapsOwnedArray[getMapIndex(game.global.currentMapId)];
+
+		if (runUnique && game.global.currentMapId !== selectedMap) recycleMap();
+
+		if (mapSettings.mapName === 'Desolation Destacking' && mapSettings.equality) {
+			if (MODULES.maps.lastMapWeWereIn.level !== mapSettings.mapLevel + game.global.world) recycleMap();
+			return;
+		}
 
 		//Ensure the map has the correct biome, if not then recycle it.
-		if (mapSettings.biome && MODULES.maps.lastMapWeWereIn.location !== mapSettings.biome) recycleMap();
+		if (mapSettings.biome && ((mapSettings.biome === 'Any' && MODULES.maps.lastMapWeWereIn.location === 'Forest') || MODULES.maps.lastMapWeWereIn.location !== mapSettings.biome)) recycleMap();
 		//If the selected map is the wrong level then recycle it.
 		if (MODULES.maps.lastMapWeWereIn.level !== mapSettings.mapLevel + game.global.world) recycleMap();
 		//If the selected map is the wrong special then recycle it.
@@ -558,20 +539,14 @@ function _abandonMapCheck(selectedMap = null, runUnique) {
 		if (MODULES.maps.lastMapWeWereIn.bonus === undefined) {
 			if (mapSettings.special !== '0') recycleMap();
 		} else if (MODULES.maps.lastMapWeWereIn.bonus !== mapSettings.special) recycleMap();
-		if (runUnique && game.global.currentMapId !== selectedMap) recycleMap();
 	}
 }
 
 function _runSelectedMap(mapId, runUnique) {
 	_abandonMapCheck(mapId, runUnique);
-	selectMap(mapId);
+	if (game.global.currentMapId !== mapId) selectMap(mapId);
 	runMap();
-	const mapObj = game.global.mapsOwnedArray[getMapIndex(mapId)];
-
-	if (MODULES.maps.lastMapWeWereIn !== mapObj) {
-		debug(`Running ${prettifyMap(mapObj)}`, 'maps', 'th-large');
-		MODULES.maps.lastMapWeWereIn = mapObj;
-	}
+	debug(`Running ${prettifyMap(MODULES.maps.lastMapWeWereIn)}`, 'maps', 'th-large');
 }
 
 //Way to fix an issue with having no maps available to run and no fragments to purchase them
@@ -581,13 +556,12 @@ function _checkWaitForFrags() {
 	MODULES.maps.fragmentCost = Infinity;
 }
 
-function _slowScumCheck() {
+function _slowScumCheck(mapObj = getCurrentMapObject()) {
 	if (MODULES.maps.slowScumming || !game.global.mapsActive || game.global.universe !== 2) return;
 	if (getPageSetting('testMapScummingValue') <= 0 || hdStats.hdRatioMap < getPageSetting('testMapScummingValue')) return;
 	let canSlowScum = ['Map Bonus', 'Prestige Raiding', 'Mayhem Destacking', 'Pandemonium Destacking', 'Desolation Gear Scum'].indexOf(mapSettings.mapName) !== -1;
 	if (!canSlowScum) return;
 
-	const mapObj = getCurrentMapObject();
 	if (mapObj.noRecycle || mapObj.size !== 20) return;
 
 	if (game.global.mapRunCounter !== 0 || !MODULES.maps.slowScumming) slowScum();

@@ -34,7 +34,7 @@ function canU2OverkillAT(targetZone) {
 }
 
 function maxOneShotPower(planToMap, targetZone) {
-	var power = 2;
+	let power = 2;
 	if (!targetZone) targetZone = game.global.world;
 
 	if (game.global.universe === 1) {
@@ -43,7 +43,8 @@ function maxOneShotPower(planToMap, targetZone) {
 		//Mastery
 		if (game.talents.overkill.purchased) power++;
 		//Fluffy
-		if (Fluffy.isRewardActive('overkiller')) power += Fluffy.isRewardActive('overkiller');
+		const overkiller = Fluffy.isRewardActive('overkiller');
+		if (overkiller) power += overkiller;
 		//Ice
 		if (getUberEmpowerment() === 'Ice') power += 2;
 		if (getEmpowerment() === 'Ice' && game.empowerments.Ice.getLevel() >= 50) power++;
@@ -86,8 +87,21 @@ function getAvailableSpecials(special, skipCaches) {
 		}
 	}
 
-	if (!bestMod || (bestMod === 'fa' && trimpStats.hyperspeed2)) bestMod = '0';
+	const hyp2Purchased = game.talents.hyperspeed2.purchased;
+	const hypPct = game.talents.liquification3.purchased ? 75 : hyp2Purchased ? 50 : 0;
+	const hyp2 = game.global.world <= Math.floor(hze * (hypPct / 100));
+
+	if (!bestMod || (bestMod === 'fa' && hyp2)) bestMod = '0';
 	return bestMod;
+}
+
+function getSpecialTime(special) {
+	if (special === 'lmc') return 20;
+	if (special === 'lc') return 14;
+	if (special === 'smc') return 10;
+	if (special === 'hc') return 7;
+
+	return 0;
 }
 
 //I have no idea where loot > drops, hopefully somebody can tell me one day :)
@@ -106,8 +120,96 @@ function getBiome(mapGoal, resourceGoal) {
 	return biome;
 }
 
+function _simulateSliders(mapLevel, special = getAvailableSpecials('lmc'), biome = getBiome(), sliders = [9, 9, 9], perfect = true) {
+	const fragmentsOwned = game.resources.fragments.owned;
+	mapLevel = mapLevel - game.global.world;
+
+	//Gradually reduce map sliders if not using frag max setting!
+	if (mapCost(mapLevel, special, biome, sliders, perfect) > fragmentsOwned) perfect = false;
+	//Reduce map difficulty
+	while (sliders[2] > 0 && mapCost(mapLevel, special, biome, sliders, perfect) > fragmentsOwned) sliders[2] -= 1;
+	//Reduce map loot
+	while (sliders[0] > 0 && mapCost(mapLevel, special, biome, sliders, perfect) > fragmentsOwned) sliders[0] -= 1;
+
+	if (mapCost(mapLevel, special, biome, sliders, perfect) > fragmentsOwned && !challengeActive('Metal')) biome = 'Random';
+	if (mapCost(mapLevel, special, biome, sliders, perfect) > fragmentsOwned && (special === '0' || !mapSpecialModifierConfig[special].name.includes('Cache'))) special = '0';
+
+	//Reduce map size
+	while (sliders[1] > 0 && mapCost(mapLevel, special, biome, sliders, perfect) > fragmentsOwned) sliders[1] -= 1;
+
+	if (special !== '0' && mapCost(mapLevel, special, biome, sliders, perfect) > fragmentsOwned) special = '0';
+	if (biome !== 'Random' && mapCost(mapLevel, special, biome, sliders, perfect) > fragmentsOwned && !challengeActive('Metal')) {
+		biome = 'Random';
+	}
+
+	const lootValues = getMapMinMax('loot', sliders[0])[perfect ? 0 : 1];
+	const sizeValues = getMapMinMax('size', sliders[1])[perfect ? 0 : 1];
+	const difficultyValues = getMapMinMax('difficulty', sliders[2])[perfect ? 0 : 1];
+
+	return {
+		name: 'simulatedMap',
+		level: mapLevel + game.global.world,
+		mapLevel,
+		special,
+		location: biome,
+		loot: lootValues,
+		size: sizeValues,
+		difficulty: difficultyValues,
+		sliders: {
+			loot: sliders[0],
+			size: sliders[1],
+			difficulty: sliders[2]
+		},
+		perfect
+	};
+}
+
+function _simulateSliders(mapLevel, special = getAvailableSpecials('lmc'), biome = getBiome(), sliders = [9, 9, 9], perfect = true) {
+	const fragmentsOwned = game.resources.fragments.owned;
+	mapLevel = mapLevel - game.global.world;
+
+	//Gradually reduce map sliders if not using frag max setting!
+	if (mapCost(mapLevel, special, biome, sliders, perfect) > fragmentsOwned) perfect = false;
+	//Reduce map difficulty
+	while (sliders[2] > 0 && mapCost(mapLevel, special, biome, sliders, perfect) > fragmentsOwned) sliders[2] -= 1;
+	//Reduce map loot
+	while (sliders[0] > 0 && mapCost(mapLevel, special, biome, sliders, perfect) > fragmentsOwned) sliders[0] -= 1;
+
+	if (mapCost(mapLevel, special, biome, sliders, perfect) > fragmentsOwned && !challengeActive('Metal')) biome = 'Random';
+	if (mapCost(mapLevel, special, biome, sliders, perfect) > fragmentsOwned && (special === '0' || !mapSpecialModifierConfig[special].name.includes('Cache'))) special = '0';
+
+	//Reduce map size
+	while (sliders[1] > 0 && mapCost(mapLevel, special, biome, sliders, perfect) > fragmentsOwned) sliders[1] -= 1;
+
+	if (special !== '0' && mapCost(mapLevel, special, biome, sliders, perfect) > fragmentsOwned) special = '0';
+	if (biome !== 'Random' && mapCost(mapLevel, special, biome, sliders, perfect) > fragmentsOwned && !challengeActive('Metal')) {
+		biome = 'Random';
+	}
+
+	const lootValues = getMapMinMax('loot', sliders[0])[perfect ? 0 : 1];
+	const sizeValues = getMapMinMax('size', sliders[1])[perfect ? 0 : 1];
+	const difficultyValues = getMapMinMax('difficulty', sliders[2])[perfect ? 0 : 1];
+
+	return {
+		name: 'simulatedMap',
+		level: mapLevel + game.global.world,
+		mapLevel,
+		special,
+		location: biome,
+		loot: lootValues,
+		size: sizeValues,
+		difficulty: difficultyValues,
+		sliders: {
+			loot: sliders[0],
+			size: sliders[1],
+			difficulty: sliders[2]
+		},
+		perfect
+	};
+}
+
 function mapCost(plusLevel = 0, specialModifier = getAvailableSpecials('lmc'), biome = getBiome(), sliders = [9, 9, 9], perfect = true) {
-	const mapLevel = Math.max(game.global.world + plusLevel, 6);
+	const mapLevel = Math.max(game.global.world, 6);
 	let baseCost = sliders[0] + sliders[1] + sliders[2];
 	baseCost *= game.global.world >= 60 ? 0.74 : 1;
 
@@ -120,6 +222,31 @@ function mapCost(plusLevel = 0, specialModifier = getAvailableSpecials('lmc'), b
 	baseCost *= biome !== 'Random' ? 2 : 1;
 
 	return baseCost;
+}
+
+function findMap(level = 0, special = getAvailableSpecials('lmc'), biome = getBiome(), perfect = false, isTricky = false) {
+	let sendTricky = false;
+	let mapLoot = biome === 'Farmlands' ? 2.6 : biome === 'Plentiful' ? 1.85 : 1.6;
+	if (game.singleRunBonuses.goldMaps.owned) mapLoot += 1;
+
+	for (let mapping in game.global.mapsOwnedArray) {
+		const map = game.global.mapsOwnedArray[mapping];
+		let effectiveBiome = map.name === 'Tricky Paradise' && game.resources.fragments.owned < 600 ? 'Plentiful' : biome;
+		if (map.location !== effectiveBiome && effectiveBiome !== 'Random') continue;
+		if (perfect) {
+			if (map.size > game.talents.mapLoot2.purchased ? 20 : 25) continue;
+			if (map.difficulty > 0.75) continue;
+			if (map.loot > mapLoot) continue;
+		}
+		if (game.global.world + level !== map.level) continue;
+		if (map.bonus !== special && special !== '0') continue;
+		if (map.noRecycle) continue;
+		if (map.name === 'Tricky Paradise') sendTricky = map.id;
+		else return map.id;
+	}
+
+	if (isTricky && sendTricky) return 'Tricky Paradise';
+	return sendTricky;
 }
 
 function getCurrentQuest() {
@@ -144,11 +271,10 @@ function getCurrentQuest() {
 }
 
 //AutoLevel information
-function makeAdditionalInfo() {
-	if (!game.global.mapsUnlocked) return (description += `AL: Maps not unlocked!`);
+function makeAdditionalInfo_Standalone() {
+	if (!game.global.mapsUnlocked) return `AL: Maps not unlocked!`;
 	const initialInfo = get_best(stats(), true);
 	const u2 = game.global.universe === 2;
-	const extraType = u2 ? 'equality' : 'stance';
 	const showExtraType = (u2 && getPerkLevel('Equality') > 0) || (!u2 && game.upgrades.Formations.done);
 
 	const displayOutputs = (type) => {
@@ -162,19 +288,20 @@ function makeAdditionalInfo() {
 	return `Auto Level: ${displayOutputs('loot')}`;
 }
 
-function makeAdditionalInfoTooltip(mouseover) {
-	var tooltipText = '';
+function makeAdditionalInfoTooltip_Standalone(mouseover) {
+	let tooltipText = '';
 
 	if (mouseover) {
-		tooltipText = 'tooltip(' + "'Additional Info', " + "'customText', " + 'event, ' + "'";
+		tooltipText = 'tooltip(' + "'Auto Level Information', " + "'customText', " + 'event, ' + "'";
 	}
+	const biome = getBiome();
+	const specialToUse = getAvailableSpecials('lmc');
 
-	tooltipText += `<p><b>Auto Level</b><br>\
-    The level that the script recommends using whilst farming. The map level outputs assume you are running ${getBiome() === 'Plentiful' ? 'Garden' : getBiome()} biome and ${getAvailableSpecials('lmc') !== '0' ? mapSpecialModifierConfig[getAvailableSpecials('lmc')].name : 'no'} special maps with the best map sliders available and are updated every 5 seconds.</p>`;
-	if (game.global.universe === 1) tooltipText += `<p>Each map type is affixed with the stance that will give you the best results in the map.</p>`;
-	if (game.global.universe === 2) tooltipText += `<p>Each map type is affixed with the equality level that you should use for that map level as it is one that allows you to survive against the worst enemy in the map.</p>`;
-	tooltipText += `<p>Loot: The ideal map level for resource farming.</p>`;
-	tooltipText += `<p>Speed: The ideal map level for a mixture of speed and loot gains. This should be the value you use for actions like map bonus stack farming if the level is high enough.</p>`;
+	tooltipText += `<p>The map level that the script recommends using whilst farming for best loot income.</p>`;
+	tooltipText += `<p>The outputs assume you are running ${biome === 'Plentiful' ? 'Garden' : biome} biome and ${specialToUse !== '0' ? mapSpecialModifierConfig[specialToUse].name : 'no'} special maps with the best map sliders available .</p>`;
+	if (game.global.universe === 1) tooltipText += `<p>The map level is affixed with the stance that will give you the best results in the map.</p>`;
+	if (game.global.universe === 2) tooltipText += `<p>The map level is affixed with the equality level that you should use for that map level as it is one that allows you to survive against the worst enemy in the map.</p>`;
+	tooltipText += `<p>The data shown is updated every 10 seconds.</p>`;
 
 	if (mouseover) {
 		tooltipText += "')";
@@ -185,12 +312,15 @@ function makeAdditionalInfoTooltip(mouseover) {
 	}
 }
 
-const autoLevelContainer = document.createElement('DIV');
-autoLevelContainer.setAttribute('style', 'display: block; font-size: 0.9vw; text-align: centre; background-color: rgba(0, 0, 0, 0.3);');
-const autoLevelText = document.createElement('SPAN');
-autoLevelContainer.setAttribute('onmouseover', makeAdditionalInfoTooltip(true));
-autoLevelContainer.setAttribute('onmouseout', 'tooltip("hide")');
-autoLevelText.id = 'additionalInfo';
-autoLevelContainer.appendChild(autoLevelText);
-document.getElementById('trimps').appendChild(autoLevelContainer);
-if (typeof remainingHealth === 'function') updateAdditionalInfo();
+if (typeof autoTrimpSettings === 'undefined' || (typeof autoTrimpSettings !== 'undefined' && typeof autoTrimpSettings.ATversion !== 'undefined' && !autoTrimpSettings.ATversion.includes('SadAugust'))) {
+	if (document.getElementById('additionalInfo') === null) {
+		const autoLevelContainer = document.createElement('DIV');
+		autoLevelContainer.setAttribute('style', 'display: block; font-size: 0.9vw; text-align: centre; padding-bottom: 4px;');
+		const autoLevelText = document.createElement('SPAN');
+		autoLevelContainer.setAttribute('onmouseover', makeAdditionalInfoTooltip_Standalone(true));
+		autoLevelContainer.setAttribute('onmouseout', 'tooltip("hide")');
+		autoLevelText.id = 'additionalInfo';
+		autoLevelContainer.appendChild(autoLevelText);
+		document.getElementById('trimps').appendChild(autoLevelContainer);
+	}
+}

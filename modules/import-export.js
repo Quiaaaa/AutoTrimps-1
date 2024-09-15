@@ -1,4 +1,71 @@
-function ImportExportTooltip(what, event) {}
+function importExportTooltip(event, titleText) {
+	const eventHandlers = {
+		mapSettings: mapSettingsDisplay,
+		AutoStructure: autoStructureDisplay,
+		AutoJobs: autoJobsDisplay,
+		UniqueMaps: uniqueMapsDisplay,
+		MessageConfig: messageDisplay,
+		DailyAutoPortal: dailyPortalModsDisplay,
+		c2Runner: c2RunnerDisplay,
+		/* Import Export Functions */
+		exportAutoTrimps: _displayExportAutoTrimps,
+		importAutoTrimps: _displayImportAutoTrimps,
+		spireImport: _displaySpireImport,
+		priorityOrder: _displayPriorityOrder,
+		c2table: _displayC2Table,
+		resetDefaultSettingsProfiles: _displayResetDefaultSettingsProfiles,
+		disableSettingsProfiles: _displayDisableSettingsProfiles,
+		setCustomChallenge: _displaySetCustomChallenge,
+		timeWarp: _displayTimeWarp,
+		resetPerkPreset: _displayResetPerkPreset,
+		hideAutomation: hideAutomationDisplay
+	};
+
+	const titleTexts = {
+		AutoStructure: 'Configure AutoTrimps AutoStructure',
+		AutoJobs: 'Configure AutoTrimps AutoJobs',
+		UniqueMaps: 'Unique Maps',
+		MessageConfig: 'Message Config',
+		DailyAutoPortal: 'Daily Auto Portal',
+		c2Runner: _getChallenge2Info() + ' Runner',
+		/* Import Export Titles */
+		exportAutoTrimps: titleText === 'downloadSave' ? 'downloadSave' : 'Export AutoTrimps Settings',
+		importAutoTrimps: 'Import AutoTrimps Settings',
+		spireImport: 'Import Spire Settings',
+		priorityOrder: 'Priority Order Table',
+		c2table: _getChallenge2Info() + ' Table',
+		resetDefaultSettingsProfiles: 'Reset Default Settings',
+		disableSettingsProfiles: 'Disable All Settings',
+		setCustomChallenge: 'Set Custom Challenge',
+		timeWarp: 'Time Warp Hours',
+		resetPerkPreset: 'Reset Perk Preset Weights',
+		hideAutomation: 'Hide Automation Buttons'
+	};
+
+	cancelTooltip();
+	let tooltipDiv = document.getElementById('tooltipDiv');
+	let tooltipText;
+	let costText = '';
+	let ondisplay = null;
+	if (event !== 'mapSettings') swapClass('tooltipExtra', 'tooltipExtraNone', tooltipDiv);
+
+	if (eventHandlers[event]) {
+		titleText = titleTexts[event] || titleText;
+		[tooltipDiv, tooltipText, costText, ondisplay] = eventHandlers[event](tooltipDiv, titleText);
+	}
+
+	if (event) {
+		game.global.lockTooltip = true;
+		document.getElementById('tipText').className = '';
+		document.getElementById('tipText').innerHTML = tooltipText;
+		document.getElementById('tipTitle').innerHTML = titleText;
+		document.getElementById('tipCost').innerHTML = costText;
+		tooltipDiv.style.display = 'block';
+		if (typeof ondisplay === 'function') ondisplay();
+	}
+
+	if (titleText === 'downloadSave') _downloadSave(event);
+}
 
 function _displayImportAutoTrimps(tooltipDiv) {
 	const tooltipText = "Import your AutoTrimps setting string to load those settings.<br/><br/><textarea id='importBox' style='width: 100%' rows='5'></textarea>";
@@ -54,8 +121,22 @@ function _displayExportAutoTrimps(tooltipDiv) {
 }
 
 function _displayResetDefaultSettingsProfiles(tooltipDiv) {
-	const tooltipText = `This will restore your current AutoTrimps settings to their original values.<br/><br/>Are you sure you want to do this?`;
+	const tooltipText = `This will restore your current AutoTrimps settings to their original values.<br>It is advised to download a copy of your AutoTrimps settings before doing this.<br/><br/>Are you sure you want to do this?`;
 	const costText = "<div class='maxCenter'><div id='confirmTooltipBtn' class='btn btn-info' style='width: 13vw' onclick='cancelTooltip(); resetAutoTrimps();'>Reset to Default Profile</div><div style='margin-left: 15%' class='btn btn-info' style='margin-left: 5vw' onclick='cancelTooltip();'>Cancel</div></div>";
+
+	const ondisplay = function () {
+		_verticalCenterTooltip();
+	};
+
+	tooltipDiv.style.left = '33.75%';
+	tooltipDiv.style.top = '25%';
+
+	return [tooltipDiv, tooltipText, costText, ondisplay];
+}
+
+function _displayDisableSettingsProfiles(tooltipDiv) {
+	const tooltipText = `This will adjust the inputs of all of your settings to a disabled state.<br>It is advised to download a copy of your AutoTrimps settings before doing this.<br/><br/>Are you sure you want to do this?`;
+	const costText = "<div class='maxCenter'><div id='confirmTooltipBtn' class='btn btn-info' style='width: 13vw' onclick='cancelTooltip(); disableAllSettings();'>Reset to Default Profile</div><div style='margin-left: 15%' class='btn btn-info' style='margin-left: 5vw' onclick='cancelTooltip();'>Cancel</div></div>";
 
 	const ondisplay = function () {
 		_verticalCenterTooltip();
@@ -127,8 +208,8 @@ function _displayC2Table(tooltipDiv) {
 	};
 
 	const runnerLists = {
-		c2: ['Size', 'Slow', 'Watch', 'Discipline', 'Balance', 'Meditate', 'Metal', 'Lead', 'Nom', 'Toxicity', 'Electricity', 'Mapology'],
-		c3: ['Unlucky', 'Unbalance', 'Quest', 'Storm', 'Downsize', 'Duel', 'Smithless']
+		c2: c2RunnerChallengeOrder(1),
+		c3: c2RunnerChallengeOrder(2)
 	};
 
 	const challengePercentages = {
@@ -377,6 +458,7 @@ function resetAutoTrimps(autoTrimpsSettings) {
 
 		localStorage.perkyInputs = autoTrimpSettings.autoAllocatePresets.value;
 		localStorage.surkyInputs = autoTrimpSettings.autoAllocatePresets.valueU2;
+		localStorage.heirloomInputs = autoTrimpSettings.autoHeirloomStorage.value;
 		localStorage.mutatorPresets = autoTrimpSettings.mutatorPresets.valueU2;
 		loadAugustSettings();
 		if (typeof MODULES['graphs'].themeChanged === 'function') MODULES['graphs'].themeChanged();
@@ -384,7 +466,9 @@ function resetAutoTrimps(autoTrimpsSettings) {
 		//Remove the localStorage entries if they are empty and rebuild the GUI to initialise base settings
 		if (Object.keys(JSON.parse(localStorage.getItem('perkyInputs'))).length === 1) delete localStorage.perkyInputs;
 		if (Object.keys(JSON.parse(localStorage.getItem('surkyInputs'))).length === 1) delete localStorage.surkyInputs;
+		if (Object.keys(JSON.parse(localStorage.getItem('heirloomInputs'))).length === 1) delete localStorage.heirloomInputs;
 		MODULES.autoPerks.displayGUI(game.global.universe);
+		hideAutomationButtons();
 	}, 101);
 
 	const message = autoTrimpsSettings ? 'Successfully imported new AT settings...' : 'Successfully reset AT settings to Defaults...';
@@ -397,6 +481,47 @@ function resetAutoTrimps(autoTrimpsSettings) {
 	document.getElementById('tipCost').children[0].id = 'tipCostID';
 	document.getElementById('tipCostID').focus();
 	atSettings.running = true;
+}
+
+function disableAllSettings() {
+	//Disable all settings
+	for (const setting in autoTrimpSettings) {
+		if (['ATversion', 'ATversionChangelog', 'gameUser'].includes(setting)) continue;
+		const item = autoTrimpSettings[setting];
+		if (item.type === 'mazDefaultArray') continue;
+
+		if (setting === 'spamMessages') {
+			item.value.show = false;
+		} else if (item.type === 'boolean') {
+			if (item.enabled) item.enabled = false;
+			if (item.enabledU2) item.enabledU2 = false;
+		} else if (item.type === 'dropdown') {
+			if (item.dropdown) item.dropdown = 'Off';
+			if (item.dropdownU2) item.dropdownU2 = 'Off';
+		} else if (item.type === 'mazArray') {
+			if (item.value && item.value[0] && item.value[0].active) {
+				item.value[0].active = false;
+			}
+			if (item.valueU2 && item.valueU2[0] && item.valueU2[0].active) {
+				item.valueU2[0].active = false;
+			}
+		} else if (typeof item.value !== 'undefined' || typeof item.valueU2 !== 'undefined') {
+			if (item.value) item.value = 0;
+			if (item.valueU2) item.valueU2 = 0;
+		}
+	}
+
+	saveSettings();
+
+	const title = 'Settings Disabled';
+	const message = 'Successfully disabled all AutoTrimps settings.';
+	const tooltipMessage = 'AutoTrimps settings have been successfully disabled!';
+
+	debug(message, 'profile');
+	tooltip(`${title}`, `customText`, `lock`, `${tooltipMessage}`, false, `center`);
+	_verticalCenterTooltip();
+	document.getElementById('tipCost').children[0].id = 'tipCostID';
+	document.getElementById('tipCostID').focus();
 }
 
 function makeAutoPortalHelpTooltip() {
@@ -483,12 +608,10 @@ function makeAdditionalInfoTooltip(mouseover) {
 		tooltipText += `<p><b>Void</b><br>`;
 		tooltipText += `The progress you have towards the <b>Void Maps</b> permanent bone upgrade counter.</p>`;
 	}
-	tooltipText += `<p><b>AL (Auto Level)</b><br>`;
-	tooltipText += `The level that the script recommends using whilst farming.</p>`;
 
-	tooltipText += `<p><b>AL2 (Auto Level New)</b> The level that the script recommends using whilst farming. This map level output assumes you are running ${trimpStats.mapBiome === 'Plentiful' ? 'Gardens' : trimpStats.mapBiome} and ${trimpStats.mapSpecial !== '0' ? mapSpecialModifierConfig[trimpStats.mapSpecial].name : 'no special'} maps.<br>`;
+	tooltipText += `<p><b>AL (Auto Level)</b> The level that the script recommends using whilst farming. This map level output assumes you are running ${trimpStats.mapBiome === 'Plentiful' ? 'Gardens' : trimpStats.mapBiome} and ${trimpStats.mapSpecial !== '0' ? mapSpecialModifierConfig[trimpStats.mapSpecial].name : 'no special'} maps.<br>`;
 	tooltipText += `L: The ideal map level for loot gains.<br>`;
-	tooltipText += `S: The ideal map level for a mixture of speed and loot gains. Auto Maps will use this when gaining Map Bonus stacks.</p>`;
+	tooltipText += `S: The ideal map level for a mixture of speed and loot gains. Auto Maps will use this when gaining Map Bonus stacks through the Map Bonus setting.</p>`;
 
 	if (game.global.universe === 1 && game.jobs.Amalgamator.owned > 0) {
 		tooltipText += `<p><b>Breed Timer (B)</b><br>`;
@@ -518,9 +641,7 @@ function makeAdditionalInfo() {
 		description += lineBreak;
 	}
 
-	const autoLevel = whichAutoLevel();
-	if (autoLevel === 'original') description += `AL: ${hdStats.autoLevel}`;
-	else description += `AL: (L:${hdStats.autoLevelLoot} S:${hdStats.autoLevelSpeed})`;
+	description += `AL: (L:${hdStats.autoLevelLoot} S:${hdStats.autoLevelSpeed})`;
 
 	if (game.global.universe === 1 && game.jobs.Amalgamator.owned > 0) {
 		const breedTimer = Math.floor((getGameTime() - game.global.lastSoldierSentAt) / 1000);
@@ -536,13 +657,35 @@ function makeAdditionalInfo() {
 	return description;
 }
 
+/* 
+raspberry pi related setting changes
+Swaps base settings to improve performance & so that I can't accidentally pause.
+Shouldn't impact anybody else that uses AT as they'll never set the gameUser setting to SadAugust. 
+*/
+function _raspberryPiSettings() {
+	if (autoTrimpSettings.gameUser.value !== 'SadAugust') return;
+
+	if (navigator.oscpu === 'Linux armv7l') {
+		game.options.menu.hotkeys.enabled = 0;
+		game.options.menu.progressBars.enabled = 0;
+		game.options.menu.showHeirloomAnimations.enabled = 0;
+	} else {
+		game.options.menu.hotkeys.enabled = 1;
+		game.options.menu.progressBars.enabled = 2;
+		game.options.menu.showHeirloomAnimations.enabled = 1;
+	}
+}
+
 //Loads the base settings that I want to be the same when loading peoples saves as it will save me time.
 function loadAugustSettings() {
+	_raspberryPiSettings();
 	if (atSettings.initialise.basepath !== 'https://localhost:8887/AutoTrimps_Local/') return;
+
 	if (typeof greenworks === 'undefined') autoTrimpSettings.gameUser.value = 'test';
 	autoTrimpSettings.downloadSaves.enabled = 0;
 	autoTrimpSettings.downloadSaves.enabledU2 = 0;
 	saveSettings();
+
 	game.options.menu.showAlerts.enabled = 0;
 	game.options.menu.useAverages.enabled = 1;
 	game.options.menu.showFullBreed.enabled = 1;
@@ -553,6 +696,10 @@ function loadAugustSettings() {
 	game.options.menu.timestamps.enabled = 2;
 	game.options.menu.boneAlerts.enabled = 0;
 	game.options.menu.romanNumerals.enabled = 0;
+
+	game.options.menu.achievementPopups.enabled = 0;
+	game.options.menu.voidPopups.enabled = 0;
+	game.options.menu.confirmhole.enabled = 0;
 
 	let toggles = ['darkTheme', 'standardNotation', 'hotkeys'];
 	for (let i in toggles) {
@@ -743,4 +890,127 @@ function pushSpreadsheetData() {
 		dataType: 'jsonp'
 	});
 	debug(`Spreadsheet upload complete.`);
+}
+
+function makeAutomapStatusTooltip(mouseover = false) {
+	const mapStacksSetting = getPageSetting('mapBonusStacks');
+	const mapStacksValue = mapStacksSetting > 0 ? mapStacksSetting : 0;
+	const hdFarmSetting = getPageSetting('mapBonusRatio');
+	const hdFarmValue = hdFarmSetting > 0 ? hdFarmSetting : '∞';
+
+	const mapStacksText = `Will run maps to get up to <i>${mapStacksValue}</i> Map Bonus stacks when World HD Ratio is greater than <i>${prettify(hdFarmValue)}</i>.`;
+	const hdRatioText = 'HD Ratio is enemyHealth to yourDamage ratio, effectively hits to kill an enemy. The enemy health check is based on the highest health enemy in the map/zone.';
+	let hitsSurvivedText = `Hits Survived is the ratio of hits you can survive against the highest damaging enemy in the map/zone${game.global.universe === 1 ? ' (subtracts Trimp block from that value)' : ''}.`;
+	const hitsSurvived = prettify(hdStats.hitsSurvived);
+	const hitsSurvivedVoid = prettify(hdStats.hitsSurvivedVoid);
+	const hitsSurvivedSetting = targetHitsSurvived();
+	const hitsSurvivedValue = hitsSurvivedSetting > 0 ? hitsSurvivedSetting : '∞';
+	let tooltipText = '';
+
+	if (mouseover) {
+		tooltipText = 'tooltip(' + '"Automaps Status", ' + '"customText", ' + 'event, ' + '"';
+	}
+
+	tooltipText += 'Variables that control the current state and target of Automaps.<br>' + 'Values in <b>bold</b> are dynamically calculated based on current zone and activity.<br>' + 'Values in <i>italics</i> are controlled via AT settings (you can change them).<br>';
+	if (game.global.universe === 2) {
+		if (!game.portal.Equality.radLocked)
+			tooltipText += `<br>\
+		If you have the Auto Equality setting set to <b>Auto Equality: Advanced</b> then all calculations will factor expected equality value into them.<br>`;
+	}
+
+	tooltipText += `<br><b>Hits Survived info</b><br>${hitsSurvivedText}<br>Hits Survived: <b>${hitsSurvived}</b> / <i>${hitsSurvivedValue}</i><br>Void Hits Survived: <b>${hitsSurvivedVoid}</b><br>`;
+
+	//Map Setting Info
+	tooltipText += `<br><b>Mapping info</b><br>`;
+	if (mapSettings.shouldRun) {
+		tooltipText += `Farming Setting: <b>${mapSettings.mapName}</b><br>`;
+		tooltipText += `Map Level: <b>${mapSettings.mapLevel}</b><br>`;
+		tooltipText += `Auto Level: <b>${mapSettings.autoLevel}</b><br>`;
+		if (mapSettings.settingIndex) tooltipText += `Line Run: <b>${mapSettings.settingIndex}</b>${mapSettings.priority ? ` Priority: <b>${mapSettings.priority}</b>` : ``}<br>`;
+		tooltipText += `Special: <b>${mapSettings.special !== undefined && mapSettings.special !== '0' ? mapSpecialModifierConfig[mapSettings.special].name : 'None'}</b><br>`;
+		tooltipText += `Wants To Run: ${mapSettings.shouldRun}<br>`;
+		tooltipText += `Repeat: ${mapSettings.repeat}`;
+	} else {
+		tooltipText += `Not running`;
+	}
+
+	tooltipText += `<br>`;
+
+	const availableStances = unlockedStances();
+	const voidStance = availableStances.includes('S') && whichScryVoidMaps();
+	const stanceInfo = game.global.universe === 1 && game.stats.highestLevel.valueTotal() >= 60 ? `(in X formation) ` : '';
+	const stanceInfoVoids = game.global.universe === 1 ? (availableStances ? `(in S formation) ` : availableStances.includes('D') ? `(in D formation) ` : stanceInfo) : '';
+
+	tooltipText += `<br><b>HD Ratio Info</b><br>`;
+	tooltipText += `${hdRatioText}<br>`;
+	tooltipText += `World HD Ratio ${stanceInfo}<b>${prettify(hdStats.hdRatio)}</b><br>`;
+	tooltipText += `Map HD Ratio ${stanceInfo}<b>${prettify(hdStats.hdRatioMap)}</b><br>`;
+	tooltipText += `Void HD Ratio ${stanceInfoVoids}<b>${prettify(hdStats.hdRatioVoid * (voidStance ? 2 : 1))}</b><br>`;
+	tooltipText += `${mapStacksText}<br>`;
+
+	if (mouseover) {
+		return tooltipText + '")';
+	} else {
+		tooltip('Auto Maps Status', 'customText', 'lock', tooltipText, false, 'center');
+		_verticalCenterTooltip(true);
+	}
+}
+
+function makeResourceTooltip(mouseover) {
+	const resource = game.global.universe === 2 ? 'Radon' : 'Helium';
+	const resourceHr = game.global.universe === 2 ? 'Rn' : 'He';
+	const resourceOwned = game.resources[resource.toLowerCase()].owned;
+	const resourceEarned = game.global[`total${resource}Earned`];
+	const resourceLeftover = game.global[resource.toLowerCase() + 'Leftover'];
+	const resourceHrValue = game.stats.heliumHour.value();
+
+	let getPercent = (resourceHrValue / (resourceEarned - resourceOwned)) * 100;
+	let lifetime = (resourceOwned / (resourceEarned - resourceOwned)) * 100;
+	const resourceHrMsg = getPercent > 0 ? getPercent.toFixed(3) : 0;
+	const lifeTimeMsg = (lifetime > 0 ? lifetime.toFixed(3) : 0) + '%';
+
+	let tooltipText = '';
+
+	if (mouseover) {
+		tooltipText = 'tooltip(' + `\"${resource} per hour Info\",` + '"customText", ' + 'event, ' + '"';
+	}
+
+	tooltipText += `<b>${resource} per hour</b>: ${resourceHrMsg}<br>` + `Current ${resource} per hour % out of Lifetime ${resourceHr} (not including current+unspent).<br> 0.5% is an ideal peak target. This can tell you when to portal... <br>` + `<b>${resource}</b>: ${lifeTimeMsg}<br>` + `Current run total ${resource} / earned / lifetime ${resourceHr} (not including current)<br>`;
+
+	if (trimpStats.isDaily) {
+		let helium = resourceHrValue / (resourceEarned - (resourceLeftover + resourceOwned));
+		helium *= 100 + getDailyHeliumValue(countDailyWeight());
+		tooltipText += `<b>After Daily ${resource} per hour</b>: ${helium.toFixed(3)}%`;
+	}
+
+	if (mouseover) {
+		return tooltipText + '")';
+	} else {
+		tooltip(`${resource} per hour info`, 'customText', 'lock', tooltipText, false, 'center');
+		_verticalCenterTooltip(true);
+	}
+}
+
+function _displayResetPerkPreset(tooltipDiv) {
+	const tooltipText = `This will restore your selected preset to its original values.<br><br/>Are you sure you want to do this?`;
+	const costText = `<div class='maxCenter'><div id='confirmTooltipBtn' class='btn btn-info' style='width: 13vw' onclick='cancelTooltip(); fillPreset${MODULES.autoPerks.loaded}(perkCalcPreset(), true);'>Reset to Preset Defaults</div><div style='margin-left: 15%' class='btn btn-info' style='margin-left: 5vw' onclick='cancelTooltip();'>Cancel</div></div>`;
+
+	const ondisplay = function () {
+		if (typeof _verticalCenterTooltip === 'function') _verticalCenterTooltip(true);
+		else verticalCenterTooltip(true);
+	};
+
+	tooltipDiv.style.left = '33.75%';
+	tooltipDiv.style.top = '25%';
+
+	return [tooltipDiv, tooltipText, costText, ondisplay];
+}
+
+function autoPortalForce() {
+	if (!game.global.portalActive) return;
+
+	const tooltipHeader = `<b>Force Auto Portaling</b>`;
+	const tooltipText = `Are you sure you want to Auto Portal?`;
+
+	tooltip('confirm', null, 'update', `<b>${tooltipText}`, 'mapSettings.portalAfterVoids = true; MODULES.mapFunctions.afterVoids = true; game.global.totalVoidMaps = 0; autoPortalCheck(game.global.world); MODULES.mapFunctions.afterVoids = false;', `${tooltipHeader}`, 'Force Portal');
 }

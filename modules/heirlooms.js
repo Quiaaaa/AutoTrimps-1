@@ -1,10 +1,3 @@
-MODULES.heirlooms = {
-	plagueSwap: false,
-	compressedCalc: false,
-	gammaBurstPct: 1,
-	shieldEquipped: null
-};
-
 function evaluateHeirloomMods(loom, location) {
 	const heirloomLocation = location.includes('Equipped') ? game.global[location] : game.global[location][loom];
 	const heirloomType = heirloomLocation.type;
@@ -51,8 +44,9 @@ function evaluateHeirloomMods(loom, location) {
 }
 
 function worthOfHeirlooms() {
-	if (!game.global.heirloomsExtra.length > 0 || !getPageSetting('heirloomAuto') || getPageSetting('heirloomAutoTypeToKeep') === 0) return;
 	const heirloomWorth = { Shield: [], Staff: [], Core: [] };
+	if (!game.global.heirloomsExtra.length === 0 || !getPageSetting('heirloomAuto') || getPageSetting('heirloomAutoTypeToKeep') === 0) return heirloomWorth;
+
 	let heirloomEvaluations = game.global.heirloomsExtra.map((_, index) => evaluateHeirloomMods(index, 'heirloomsExtra'));
 
 	const recycle = heirloomEvaluations
@@ -81,7 +75,7 @@ function worthOfHeirlooms() {
 
 function autoHeirlooms(portal) {
 	if (portal && !portalWindowOpen) return;
-	if (!game.global.heirloomsExtra.length > 0 || !getPageSetting('heirloomAuto') || getPageSetting('heirloomAutoTypeToKeep') === 0) return;
+	if (game.global.heirloomsExtra.length === 0 || !getPageSetting('heirloomAuto') || getPageSetting('heirloomAutoTypeToKeep') === 0) return;
 
 	const maxHeirlooms = getMaxCarriedHeirlooms();
 	const typeToKeep = getPageSetting('heirloomAutoTypeToKeep');
@@ -100,7 +94,7 @@ function autoHeirlooms(portal) {
 	while (game.global.heirloomsCarried.length < maxHeirlooms && game.global.heirloomsExtra.length > 0) {
 		for (let x = 0; x < heirloomTypes.length; x++) {
 			weights = worthOfHeirlooms();
-			if (weights[heirloomTypes[x]].length > 0) {
+			if (weights && weights[heirloomTypes[x]].length > 0) {
 				let carriedHeirlooms = weights[heirloomTypes[x]].shift();
 				selectHeirloom(carriedHeirlooms.index, 'heirloomsExtra');
 				if (heirloomTypeEnabled[heirloomTypes[x]]) carryHeirloom();
@@ -156,19 +150,23 @@ function heirloomEquip(heirloom, type) {
 	if (heirloomDetails && !isHeirloomEquipped) {
 		selectHeirloom(game.global.heirloomsCarried.indexOf(heirloomDetails), 'heirloomsCarried', true);
 		equipHeirloom(true);
-		if (type === 'Shield') heirloomShieldSwapped();
+		if (type === 'Shield') updateShieldData();
 	} else if (!heirloomDetails && !isHeirloomEquipped && atSettings.intervals.tenSecond) {
 		const hdMessage = type === 'Shield' ? `This will be causing at least one of your HD Ratios to be incorrect.` : ``;
 		debug(`The heirloom named ${heirloomName} doesn't exist. Rename an heirloom or adjust the input for your ${autoTrimpSettings[heirloom].name()} ${type.toLowerCase()}.${hdMessage}`, `other`);
 	}
 }
 
-function heirloomShieldSwapped() {
-	MODULES.heirlooms.gammaBurstPct = getPageSetting('gammaBurstCalc') && getHeirloomBonus('Shield', 'gammaBurst') / 100 > 0 ? getHeirloomBonus('Shield', 'gammaBurst') / 100 : 1;
+function updateShieldData() {
+	const updateGamma = getPageSetting('gammaBurstCalc');
+	const gammaValue = updateGamma ? getHeirloomBonus('Shield', 'gammaBurst') / 100 : 0;
+	MODULES.heirlooms.gammaBurstPct = gammaValue > 0 ? gammaValue : 1;
+
+	MODULES.heirlooms.breedHeirloom = usingBreedHeirloom();
 	MODULES.heirlooms.shieldEquipped = game.global.ShieldEquipped.id;
 }
 
-function heirloomShieldToEquip(mapType, swapLooms, hdCheck = true) {
+function heirloomShieldToEquip(mapType = _getWorldType(), swapLooms = false, hdCheck = true, sendingArmy = false) {
 	if (!getPageSetting('heirloom') || !getPageSetting('heirloomShield')) return;
 
 	const afterpushShield = trimpStats.isC3 ? 'heirloomC3' : 'heirloomAfterpush';
@@ -178,7 +176,7 @@ function heirloomShieldToEquip(mapType, swapLooms, hdCheck = true) {
 		else return 'heirloomInitial';
 	}
 
-	if (swapLooms && !game.global.fighting && getPerkLevel('Anticipation') === 0 && _breedTimeRemaining() > 0) {
+	if (swapLooms && game.global.soldierHealth <= 0 && !sendingArmy && getPerkLevel('Anticipation') === 0 && _breedTimeRemaining() > 0) {
 		if (challengeActive('Archaeology') && getPageSetting('archaeologyBreedShield') !== 'undefined') return 'archaeologyBreedShield';
 		if (getPageSetting('heirloomBreed') !== 'undefined') return 'heirloomBreed';
 	}
@@ -190,6 +188,7 @@ function heirloomShieldToEquip(mapType, swapLooms, hdCheck = true) {
 	//2) If we are in a C2/C3 then use the C3 swap zone.
 	//3) If we are running a daily then use the daily swap zone.
 	//4) Otherwise if in a filler use regular swap zone.
+
 	let swapZone =
 		trimpStats.isC3 && (currChallenge === 'frigid' || currChallenge === 'mayhem' || currChallenge === 'pandemonium' || currChallenge === 'desolation') && getPageSetting(currChallenge) && getPageSetting(currChallenge + 'SwapZone') > 0
 			? getPageSetting(currChallenge + 'SwapZone')
@@ -202,11 +201,17 @@ function heirloomShieldToEquip(mapType, swapLooms, hdCheck = true) {
 			: trimpStats.isFiller
 			? getPageSetting('heirloomSwapZone')
 			: 999;
+
 	if (swapZone <= 0) swapZone = 999;
+
 	//If we have the post void heirloom swap setting enabled and have already run void maps run this swap to afterpush shield until the end of the run
 	if (getPageSetting('heirloomPostVoidSwap') && game.stats.totalVoidMaps.value > 0) swapZone = 0;
 	//If we have the daily odd or even setting enabled and the negative daily mod is active then add one to our swap zone
-	if (trimpStats.isDaily && dailyOddOrEven().active && swapZone % 2 === dailyOddOrEven().remainder) swapZone += 1;
+	if (trimpStats.daily) {
+		const dailyModifiers = dailyOddOrEven();
+		if (dailyModifiers.active && swapZone % 2 === dailyModifiers.remainder) swapZone += 1;
+	}
+
 	//Challenges where abandoning your current army has the potential to be REALLY bad.
 	const dontSwap = currChallenge === 'trapper' || (currChallenge === 'berserk' && game.challenges.Berserk.weakened !== 20) || currChallenge === 'trappapalooza';
 	if (swapLooms) {
@@ -217,6 +222,7 @@ function heirloomShieldToEquip(mapType, swapLooms, hdCheck = true) {
 		//Disable plagueSwap variable if we are querying a map
 		if (mapType === 'map' && swapLooms) MODULES.heirlooms.plagueSwap = false;
 	}
+
 	if (mapType === 'world' && !dontSwap) {
 		//Change swap zone to current zone if we're above X HD ratio.
 		if (hdCheck && getPageSetting('heirloomSwapHD') > 0 && hdStats.hdRatioHeirloom >= getPageSetting('heirloomSwapHD') && shouldAbandon(false)) swapZone = game.global.world;
@@ -237,9 +243,10 @@ function heirloomShieldToEquip(mapType, swapLooms, hdCheck = true) {
 				MODULES.heirlooms.plagueSwap = true;
 			} else MODULES.heirlooms.plagueSwap = false;
 		}
-		//Otherwise set plagueSwap global var to false to ensure we don't mess up any code later on.
+		//Otherwise set plagueSwap global variable to false to ensure we don't mess up any code later on.
 		else MODULES.heirlooms.plagueSwap = false;
 	}
+
 	//Set swap zone to 999 if we're running our afterpush shield & cell after next is compressed for maximum plaguebringer damage
 	if (mapType === 'world' && !dontSwap && game.global.universe === 2 && getPageSetting('heirloomCompressedSwap') && game.global.world >= swapZone && game.global.world >= 201 && game.global.lastClearedCell < 96 && game.global.gridArray[game.global.lastClearedCell + 3].u2Mutation.indexOf('CMP') !== -1) swapZone = 999;
 
@@ -261,10 +268,12 @@ function heirloomShieldToEquip(mapType, swapLooms, hdCheck = true) {
 			MODULES.fightinfo.fastImps.includes(game.global.mapGridArray[game.global.lastClearedMapCell + 2].name) &&
 			game.global.voidBuff !== 'doubleAttack';
 	}
+
 	if (voidActive && (getPageSetting('heirloomVoid') !== 'undefined' || (MODULES.heirlooms.plagueSwap && getPageSetting('heirloomVoidPlaguebringer') !== 'undefined'))) {
 		if (MODULES.heirlooms.plagueSwap && getPageSetting('heirloomVoidPlaguebringer') !== 'undefined') return 'heirloomVoidPlaguebringer';
 		else return 'heirloomVoid';
 	}
+
 	//Return Duel shield if we are running that challenge with the settings active
 	if (challengeActive('Duel') && getPageSetting('duel') && getPageSetting('duelShield') !== 'undefined') return 'duelShield';
 	else if (noBreedChallenge() && getPageSetting('trapper') && getPageSetting('trapperShield') !== 'undefined') return 'trapperShield';
@@ -325,13 +334,13 @@ function getMapBonusHeirloomStaff(mapBonus) {
 	}
 }
 
-function heirloomSwapping() {
+function heirloomSwapping(sendingArmy = false) {
 	if (!getPageSetting('heirloom')) return;
 
-	const mapType = game.global.voidBuff ? 'void' : game.global.mapsActive ? 'map' : 'world';
+	const mapType = _getWorldType();
 
 	if (getPageSetting('heirloomShield')) {
-		const shield = heirloomShieldToEquip(mapType, true);
+		const shield = heirloomShieldToEquip(mapType, true, true, sendingArmy);
 		if (shield) heirloomEquip(shield, 'Shield');
 	}
 
@@ -342,12 +351,15 @@ function heirloomSwapping() {
 }
 
 function usingBreedHeirloom() {
-	if (game.global.mapsActive) return false;
+	if (!getPageSetting('heirloom') || !getPageSetting('heirloomShield')) return false;
+
+	const liquified = liquifiedZone();
+	if (liquified || getCurrentWorldCell().level + Math.max(0, maxOneShotPower(true) - 1) >= 100) return false;
 
 	let breedHeirloom = getPageSetting('heirloomBreed');
 	if (challengeActive('Archaeology') && getPageSetting('archaeology')) {
 		const archBreedShield = getPageSetting('archaeologyBreedShield');
-		if (archBreed !== 'undefined') breedHeirloom = archBreedShield;
+		if (archBreedShield !== 'undefined') breedHeirloom = archBreedShield;
 	}
 
 	if (breedHeirloom === 'undefined') return false;

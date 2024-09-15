@@ -10,8 +10,8 @@ const atSettings = {
 		pathMods: 'mods/',
 		installedMain: ['versionNumber', 'SettingsGUI'],
 		loadedMain: [],
-		installedMods: ['gameUpdates', 'spireTD', 'heirloomCalc', 'farmCalc', 'mutatorPreset', 'perky', 'surky'],
-		installedModules: ['import-export', 'query', 'modifyGameFunctions', 'mapFunctions', 'calc', 'portal', 'upgrades', 'heirlooms', 'buildings', 'jobs', 'equipment', 'gather', 'stance', 'maps', 'breedtimer', 'combat', 'scryer', 'magmite', 'nature', 'other', 'fight-info', 'performance', 'bones', 'MAZ', 'minigames', 'utils'],
+		installedMods: ['spireTD', 'heirloomCalc', 'farmCalc', 'mutatorPreset', 'perky', 'surky'],
+		installedModules: ['import-export', 'utils', 'query', 'modifyGameFunctions', 'mapFunctions', 'calc', 'portal', 'upgrades', 'heirlooms', 'buildings', 'jobs', 'equipment', 'gather', 'stance', 'maps', 'breedtimer', 'combat', 'magmite', 'nature', 'other', 'fight-info', 'performance', 'bones', 'MAZ', 'minigames'],
 		loadedModules: [],
 		loadedMods: [],
 		loadedExternal: []
@@ -20,15 +20,16 @@ const atSettings = {
 	running: true,
 	runInterval: 100,
 	portal: { currentworld: 0, lastrunworld: 0, aWholeNewWorld: false, currentHZE: 0, lastHZE: 0, aWholeNewHZE: false },
-	loops: { atTimeLapseFastLoop: false, mainLoopInterval: null, guiLoopInterval: null },
-	intervals: { counter: 0, oneSecond: false, twoSecond: false, fiveSecond: false, sixSecond: false, tenSecond: false, thirtySecond: false, oneMinute: false, tenMinute: false },
+	loops: { atTimeLapseFastLoop: false, mainLoop: null, guiLoop: null, gameLoop: null },
+	intervals: { counter: 0, tenthSecond: false, halfSecond: false, oneSecond: false, twoSecond: false, fiveSecond: false, sixSecond: false, tenSecond: false, thirtySecond: false, oneMinute: false, tenMinute: false },
+	timeWarp: { loopTicks: 100, updateFreq: 1000, nextUpdate: 1000, loopCount: 0, currentLoops: 0 },
 	autoSave: game.options.menu.autoSave.enabled
 };
 
 let autoTrimpSettings = {};
 const MODULES = {
 	popups: { challenge: false, respecAncientTreasure: false, remainingTime: Infinity, intervalID: null, portal: false, mazWindowOpen: false },
-	stats: { baseMinDamage: 0, baseMaxDamage: 0, baseDamage: 0, baseHealth: 0, baseBlock: 0 },
+	heirlooms: { plagueSwap: false, compressedCalc: false, gammaBurstPct: 1, shieldEquipped: null, breedHeirloom: false },
 	graphs: {},
 	u1unlocks: [],
 	u2unlocks: []
@@ -37,10 +38,24 @@ const MODULES = {
 let currPortalUniverse = 0;
 let currSettingUniverse = 0;
 let settingChangedTimeout = false;
+var originalGameLoop = gameLoop;
 
 let mapSettings = { shouldRun: false, mapName: '', levelCheck: Infinity };
 let hdStats = { autoLevel: Infinity };
-let trimpStats = { isC3: false, isDaily: false, isFiller: false, mountainPriority: false };
+let trimpStats = { isC3: false, isDaily: false, isFiller: false, mountainPriority: false, fluffyRewards: { universe: 0, level: 0 } };
+
+function shouldUpdate(updateEvery = 2000) {
+	if (usingRealTimeOffline && loops === atSettings.timeWarp.currentLoops) return true;
+	if (usingRealTimeOffline && (atSettings.timeWarp.currentLoops === 0 || loops >= atSettings.timeWarp.currentLoops + updateEvery)) {
+		if (updateEvery !== 2000) return true;
+		atSettings.timeWarp.currentLoops = loops;
+		updateAllInnerHtmlFrames();
+
+		return true;
+	}
+
+	return !usingRealTimeOffline;
+}
 
 function loadScript(url, type = 'text/javascript', retries = 3) {
 	return new Promise((resolve, reject) => {
@@ -52,16 +67,19 @@ function loadScript(url, type = 'text/javascript', retries = 3) {
 		const script = document.createElement('script');
 		script.src = url;
 		script.type = type;
+
 		script.onload = () => {
 			atSettings.modules.loadedExternal.push(url);
 			resolve();
 		};
+
 		script.onerror = () => {
 			console.log(`Failed to load script ${url}. Retries left: ${retries - 1}`);
 			loadScript(url, type, retries - 1)
 				.then(resolve)
 				.catch(reject);
 		};
+
 		document.head.appendChild(script);
 	});
 }
@@ -77,50 +95,75 @@ function loadStylesheet(url, rel = 'stylesheet', type = 'text/css', retries = 3)
 		link.href = url;
 		link.rel = rel;
 		link.type = type;
+
 		link.onload = () => {
 			atSettings.modules.loadedExternal.push(url);
 			resolve();
 		};
+
 		link.onerror = () => {
 			console.log(`Failed to load stylesheet ${url}. Retries left: ${retries - 1}`);
 			loadStylesheet(url, rel, type, retries - 1)
 				.then(resolve)
 				.catch(reject);
 		};
+
 		document.head.appendChild(link);
 	});
 }
 
+function isModuleLoaded(fileName, prefix) {
+	if (prefix === atSettings.modules.path && atSettings.modules.loadedModules.includes(fileName)) {
+		return true;
+	} else if (prefix === atSettings.modules.pathMods && atSettings.modules.loadedMods.includes(fileName)) {
+		return true;
+	}
+	return false;
+}
+
 //Loading modules from basepath that are required for the script to run.
 function loadModules(fileName, prefix = '') {
-	if (prefix) {
-		if (prefix === atSettings.modules.path && atSettings.modules.loadedModules.includes(fileName)) {
-			return;
-		} else if (prefix === atSettings.modules.pathMods && atSettings.modules.loadedMods.includes(fileName)) {
-			return;
+	return new Promise((resolve, reject) => {
+		if (prefix) {
+			if (prefix && isModuleLoaded(fileName, prefix)) {
+				resolve();
+				return;
+			}
 		}
-	}
 
-	const script = document.createElement('script');
-	script.src = `${atSettings.initialise.basepath}${prefix}${fileName}.js`;
-	script.id = `${fileName}_MODULE`;
-	script.async = false;
-	script.defer = true;
+		const script = document.createElement('script');
+		script.src = `${atSettings.initialise.basepath}${prefix}${fileName}.js`;
+		script.id = `${fileName}_MODULE`;
+		script.async = false;
+		script.defer = true;
 
-	script.addEventListener('load', () => {
-		if (!atSettings.modules.loadedModules.includes(fileName) && !atSettings.modules.loadedMain.includes(fileName)) {
-			if (prefix) {
-				if (prefix === atSettings.modules.path) atSettings.modules.loadedModules = [...atSettings.modules.loadedModules, fileName];
-				else atSettings.modules.loadedMods = [...atSettings.modules.loadedMods, fileName];
-			} else atSettings.modules.loadedMain = [...atSettings.modules.loadedMain, fileName];
-		}
+		script.addEventListener('load', () => {
+			if (!atSettings.modules.loadedModules.includes(fileName) && !atSettings.modules.loadedMain.includes(fileName)) {
+				if (prefix) {
+					if (prefix === atSettings.modules.path) atSettings.modules.loadedModules = [...atSettings.modules.loadedModules, fileName];
+					else atSettings.modules.loadedMods = [...atSettings.modules.loadedMods, fileName];
+				} else atSettings.modules.loadedMain = [...atSettings.modules.loadedMain, fileName];
+			}
+			resolve();
+		});
+
+		script.addEventListener('error', () => {
+			reject(new Error(`Failed to load module: ${fileName} from path: ${prefix || ''}`));
+		});
+
+		document.head.appendChild(script);
 	});
-
-	document.head.appendChild(script);
 }
 
 function loadScriptsAT() {
 	console.time();
+
+	if (usingRealTimeOffline) {
+		clearTimeout(offlineProgress.loop); /* Disable offline progress loop */
+	} else {
+		gameLoop = function () {}; /* Disable game from running until script loads to ensure no time is spent without AT running */
+	}
+
 	//The basepath variable is used in graphs, can't remove this while using Quias graphs fork unless I copy code and change that line for every update.
 	basepath = `${atSettings.initialise.basepathOriginal}css/`;
 	const scripts = Array.from(document.getElementsByTagName('script'));
@@ -131,10 +174,12 @@ function loadScriptsAT() {
 	(async function () {
 		try {
 			const modules = ['versionNumber', ...atSettings.modules.installedMods, ...atSettings.modules.installedModules, 'SettingsGUI'];
-
 			const scripts = ['https://ajax.googleapis.com/ajax/libs/jquery/3.7.0/jquery.min.js', 'https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js', 'https://Quiaaaa.github.io/AutoTrimps/Graphs.js'];
+			const stylesheets = ['https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css', `${atSettings.initialise.basepath}css/tabs.css`, `${atSettings.initialise.basepath}css/farmCalc.css`, `${atSettings.initialise.basepath}css/perky.css`];
 
-			const stylesheets = ['https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css', `${atSettings.initialise.basepath}css/tabs.css`];
+			if (game.global.stringVersion === '5.9.2') {
+				await loadModules('gameUpdates', atSettings.modules.pathMods);
+			}
 
 			for (const module of modules) {
 				const path = atSettings.modules.installedMods.includes(module) ? atSettings.modules.pathMods : atSettings.modules.installedModules.includes(module) ? atSettings.modules.path : '';
@@ -150,12 +195,13 @@ function loadScriptsAT() {
 				if (atSettings.modules.loadedExternal.includes(stylesheet)) continue;
 				await loadStylesheet(stylesheet);
 			}
+
+			initialiseScript();
 		} catch (error) {
 			console.error('Error loading script or stylesheet:', error);
+			initialiseScript();
 		}
 	})();
-
-	initialiseScript();
 }
 
 loadScriptsAT();
@@ -169,57 +215,50 @@ function initialiseScript() {
 	};
 
 	if (Object.values(filesNotLoaded).some(Boolean)) {
-		atSettings.intervals.counter++;
-		if (atSettings.intervals.counter % 500 === 0) {
-			console.timeEnd();
-			return loadScriptsAT();
-		}
-		return setTimeout(initialiseScript, 1);
+		console.timeEnd();
+		return loadScriptsAT();
 	}
 
+	atlantrimpRespecOverride();
 	_loadAutoTrimpsSettings();
 	automationMenuSettingsInit();
 	initialiseAllTabs();
 	initialiseAllSettings();
-	_raspberryPiSettings();
 	updateATVersion();
+	localStorage.setItem('mutatorPresets', autoTrimpSettings.mutatorPresets.valueU2);
 
-	const gammaBurstPct = getHeirloomBonus('Shield', 'gammaBurst') / 100;
-	MODULES.heirlooms.gammaBurstPct = gammaBurstPct > 0 ? gammaBurstPct : 1;
+	if (getPageSetting('gameUser') === 'ray') MODULES.buildings.betaHouseEfficiency = true;
+	currSettingUniverse = getPageSetting('universeSetting') + 1;
+
+	if (portalUniverse === -1) portalUniverse = game.global.universe;
+	MODULES.autoPerks.displayGUI(portalUniverse);
+	loadAugustSettings();
+	_setupATButtons();
+	updateShieldData();
+
+	if (_getTargetWorldType() === 'void' && !hdStats.hitsSurvivedVoid) {
+		hdStats.hitsSurvivedVoid = calcHitsSurvived(game.global.world, 'void', _getVoidPercent(game.global.world, game.global.universe));
+	} else if (!hdStats.hitsSurvived) {
+		hdStats.hitsSurvived = calcHitsSurvived(game.global.world, 'world', 1);
+	}
+
 	trimpStats = new TrimpStats(true);
 	hdStats = new HDStats(true);
-	autoMapsStatus();
 
 	if (usingRealTimeOffline) {
 		if (game.options.menu.offlineProgress.enabled === 1) removeTrustworthyTrimps();
 		cancelTooltip();
 	}
 
-	localStorage.setItem('mutatorPresets', autoTrimpSettings.mutatorPresets.valueU2);
-	//Setup Perky/Surky UI
-	universeSwapped();
-	loadAugustSettings();
-	currSettingUniverse = autoTrimpSettings.universeSetting.value + 1;
-	challengeInfo(true);
-	_setupATButtons();
+	farmingDecision();
+	autoMapsStatus();
 
-	//Copy gameLoop for when we enter toggleCatchUpMode.
-	originalGameLoop = gameLoop;
 	atSettings.initialise.loaded = true;
 	toggleCatchUpMode();
+	if (usingRealTimeOffline) offlineProgress.loop = setTimeout(timeWarpLoop, 0, true);
 	debug(`AutoTrimps (${atSettings.initialise.version.split(' ')[0]} ${atSettings.initialise.version.split(' ')[1]}) has finished loading.`);
+	challengeInfo(true);
 	console.timeEnd();
-}
-
-//Displays Perky UI when changing universes.
-function universeSwapped() {
-	//Hard to do an alternative to this. Would have linked it to the swapPortalUniverse() function but the force going back to U1 button in U2 causes issues with that.
-	//Sets up the proper calc UI when switching between portal universes.
-	if (currPortalUniverse !== portalUniverse) {
-		if (portalUniverse === -1) portalUniverse = game.global.universe;
-		MODULES.autoPerks.displayGUI(portalUniverse);
-		currPortalUniverse = portalUniverse;
-	}
 }
 
 function startStopLoop(loopName, action) {
@@ -243,15 +282,16 @@ function resetLoops() {
 
 function toggleCatchUpMode() {
 	if (!atSettings.loops.mainLoop && !atSettings.loops.guiLoop && !atSettings.loops.atTimeLapseFastLoop) {
-		['mainLoop', 'guiLoop'].forEach((loop) => startStopLoop(loop, 'start'));
+		resetLoops();
 	}
 
 	if (usingRealTimeOffline) {
-		if (atSettings.running === false || game.options.menu.pauseGame.enabled || getPageSetting('pauseScript', 1) || !getPageSetting('timeWarpSpeed')) {
+		if (!atSettings.running || game.options.menu.pauseGame.enabled || getPageSetting('pauseScript', 1) || !getPageSetting('timeWarpSpeed')) {
 			if (usingRealTimeOffline && atSettings.loops.atTimeLapseFastLoop) {
 				resetLoops();
 				debug(`Disabled Time Warp functionality.`, 'offline');
 			}
+
 			return;
 		}
 	}
@@ -264,9 +304,10 @@ function toggleCatchUpMode() {
 			originalGameLoop(makeUp, now);
 
 			updateInterval();
-			if (atSettings.intervals.thirtyMinute && getPageSetting('timeWarpSaving')) _timeWarpSave();
 			mainCleanup();
-			if (game.global.mapsActive && getPageSetting('timeWarpDisplay')) _adjustGlobalTimers(['mapStarted'], -100);
+			if (game.global.mapsActive) _adjustGlobalTimers(['mapStarted'], -100);
+			if (atSettings.intervals.thirtyMinute && getPageSetting('timeWarpSaving')) _timeWarpSave();
+
 			if (loops % getPageSetting('timeWarpFrequency') === 0 || atSettings.portal.aWholeNewWorld || liquifiedZone()) {
 				mainLoop();
 			} else if (atSettings.intervals.thirtySecond) {
@@ -289,7 +330,6 @@ function toggleCatchUpMode() {
 	}
 }
 
-//Offline mode check
 function shouldRunInTimeWarp() {
 	return !atSettings.loops.atTimeLapseFastLoop || (usingRealTimeOffline && !getPageSetting('timeWarpSpeed'));
 }
@@ -298,6 +338,8 @@ function updateInterval() {
 	atSettings.intervals.counter++;
 
 	const intervals = {
+		tenthSecond: 100,
+		halfSecond: 500,
 		oneSecond: 1000,
 		twoSecond: 2000,
 		fiveSecond: 5000,
@@ -318,63 +360,59 @@ function mainLoop() {
 	toggleCatchUpMode();
 	if (MODULES.popups.mazWindowOpen) _handleMazWindow();
 	remakeTooltip();
-	universeSwapped();
 
-	if (!atSettings.running || getPageSetting('pauseScript', 1) || game.options.menu.pauseGame.enabled) return;
-	atSettings.running = true;
+	if (!atSettings.running || game.options.menu.pauseGame.enabled || autoTrimpSettings.pauseScript.enabled) return;
+	if (game.global.ShieldEquipped.id !== MODULES.heirlooms.shieldEquipped) updateShieldData();
+
 	const runDuringTimeWarp = shouldRunInTimeWarp();
-	if (runDuringTimeWarp) updateInterval();
-
-	_handleIntervals();
-
 	if (runDuringTimeWarp) {
-		farmingDecision();
+		updateInterval();
 		mainCleanup();
 	}
 
 	if (_handleSlowScumming()) return;
 
-	if (MODULES.heirlooms.shieldEquipped !== game.global.ShieldEquipped.id) heirloomShieldSwapped();
+	boneShrine();
+	buyUpgrades();
+	buyBuildings();
+	autoEquip();
+	buyJobs();
+	if (game.global.universe === 1) geneAssist();
+	autoGoldUpgrades();
+	autoGather();
+
+	_handleIntervals();
 
 	if (runDuringTimeWarp) {
+		farmingDecision();
 		autoMaps();
 		autoMapsStatus();
+		displayMostEfficientBuilding();
+		displayMostEfficientEquipment();
+		displayShieldGymEfficiency();
 	}
 
-	autoGather();
-	buyBuildings();
-	buyJobs();
-	buyUpgrades();
 	heirloomSwapping();
 	callBetterAutoFight();
-	boneShrine();
-	autoGoldUpgrades();
-	autoEquip();
-
-	if (runDuringTimeWarp) {
-		autoPortalCheck();
-		displayMostEfficientEquipment();
-	}
 
 	mainLoopU1();
 	mainLoopU2();
 	buySingleRunBonuses();
-	automateSpireAssault();
 	_handlePopupTimer();
 	makeAdditionalInfo();
+
+	if (runDuringTimeWarp) autoPortalCheck();
 }
 
-//U1 functions
 function mainLoopU1() {
 	if (game.global.universe !== 1) return;
 
-	geneAssist();
 	autoRoboTrimp();
 	autoEnlight();
 	autoNatureTokens();
-	if (getPageSetting('spendmagmite') === 2 && !settingChangedTimeout) autoMagmiteSpender();
+	if (!settingChangedTimeout && getPageSetting('magmiteSpending') === 2) autoMagmiteSpender();
 	autoGenerator();
-	if (shouldRunInTimeWarp()) checkStanceSetting();
+	if (shouldRunInTimeWarp()) autoStance();
 	if (game.global.spireActive) {
 		exitSpireCell();
 		atlantrimpRespecMessage();
@@ -382,16 +420,16 @@ function mainLoopU1() {
 	fluffyEvolution();
 }
 
-//U2 functions
 function mainLoopU2() {
 	if (game.global.universe !== 2) return;
 
 	if (shouldRunInTimeWarp()) equalityManagement();
+	/* automateSpireAssault(); */
 	_alchemyVoidPotions();
 }
 
 function guiLoop() {
-	if (getPageSetting('displayEnhancedGrid') && !usingRealTimeOffline) MODULES.fightinfo.Update();
+	if (!usingRealTimeOffline && (!liquifiedZone() || game.global.mapsActive) && getPageSetting('displayEnhancedGrid')) MODULES.fightinfo.Update();
 	if (MODULES.performance && MODULES.performance.isAFK) MODULES.performance.UpdateAFKOverlay();
 }
 
@@ -413,13 +451,16 @@ function _handleNewHZE() {
 
 function _handleNewWorld() {
 	if (!atSettings.portal.aWholeNewWorld) return;
+	if (autoPortalCheck()) return;
 	if ((usingRealTimeOffline || atSettings.loops.atTimeLapseFastLoop) && game.global.world === 60) _timeWarpUpdateEquipment();
-	autoPortalCheck();
+	buyUpgrades();
+	autoEquip();
 	archaeologyAutomator();
 	challengeInfo();
 
 	if (atSettings.portal.currentworld === 1) {
 		MODULES.portal.zonePostpone = 0;
+		hideAutomationButtons();
 		if (!game.upgrades.Battle.done) {
 			_setButtonsPortal();
 		}
@@ -432,9 +473,12 @@ function _handleNewWorld() {
 }
 
 function _debugZoneStart() {
+	const { Tauntimp, Magnimp, Whipimp, Venimp } = game.unlocks.impCount;
+	const heName = heliumOrRadon();
 	debug(`Starting Zone ${game.global.world}`, 'zone');
-	debug(`Zone #${game.global.world}: Tauntimp (${game.unlocks.impCount.Tauntimp}), Magnimp (${game.unlocks.impCount.Magnimp}), Whipimp (${game.unlocks.impCount.Whipimp}), Venimp (${game.unlocks.impCount.Venimp})`, 'exotic');
-	debug(`Zone # ${game.global.world}: Total pop (${prettify(game.resources.trimps.owned)}). A Bone Charge would give you these resources (${boneShrineOutput(1).slice(0, -1).toLowerCase()})`, 'run_Stats');
+	debug(`Zone #${game.global.world}: Tauntimp (${Tauntimp}), Magnimp (${Magnimp}), Whipimp (${Whipimp}), Venimp (${Venimp})`, 'exotic');
+	/* debug(`Zone #${game.global.world}: ${heName} (${game.goldenUpgrades.Helium.purchasedAt.length}/${Math.round(game.goldenUpgrades.Helium.currentBonus * 100)}%}), Battle (${game.goldenUpgrades.Battle.purchasedAt.length}/${Math.round(game.goldenUpgrades.Battle.currentBonus * 100)}%), Void (${game.goldenUpgrades.Void.purchasedAt.length}/${Math.round(game.goldenUpgrades.Void.currentBonus * 100)}%)`, 'exotic'); */
+	debug(`Zone # ${game.global.world}: Total pop (${prettify(game.resources.trimps.owned)}). A Bone Charge would give you ${boneShrineOutput(1).slice(0, -1).toLowerCase()}`, 'run_Stats');
 }
 
 function mainCleanup() {

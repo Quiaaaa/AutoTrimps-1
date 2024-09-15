@@ -64,23 +64,23 @@ function queryAutoEqualityStats(ourDamage, ourHealth, enemyDmgEquality, enemyHea
 }
 
 function _calcHDRatioDebug(ourBaseDamage, enemyHealth, universeSetting, worldType) {
-	debug(`ourBaseDamage: ${ourBaseDamage}`, `debug`);
-	debug(`enemyHealth: ${enemyHealth}`, `debug`);
-	debug(`universeSetting: ${universeSetting}`, `debug`);
-	debug(`HD type: ${worldType}`, `debug`);
-	debug(`HD value (H:D): ${enemyHealth / ourBaseDamage}`, `debug`);
+	debug(`ourBaseDamage: ${ourBaseDamage}`, `debugStats`);
+	debug(`enemyHealth: ${enemyHealth}`, `debugStats`);
+	debug(`universeSetting: ${universeSetting}`, `debugStats`);
+	debug(`HD type: ${worldType}`, `debugStats`);
+	debug(`HD value (H:D): ${enemyHealth / ourBaseDamage}`, `debugStats`);
 }
 
 function _calcHitsSurvivedDebug(targetZone, damageMult, worldDamage, equality, block, pierce, health, hitsToSurvive, finalDmg) {
-	debug(`Target Zone: ${targetZone}`, `debug`);
-	debug(`Damage Mult: ${damageMult}`, `debug`);
-	debug(`World Damage: ${worldDamage}`, `debug`);
-	if (game.global.universe === 1) debug(`Block: ${block}`, `debug`);
-	if (game.global.universe === 1) debug(`Pierce: ${pierce}`, `debug`);
-	if (game.global.universe === 2) debug(`Equality: ${equality}`, `debug`);
-	debug(`Health: ${health}`, `debug`);
-	debug(`Hits to Survive: ${hitsToSurvive}`, `debug`);
-	debug(`finalDmg: ${finalDmg}`, `debug`);
+	debug(`Target Zone: ${targetZone}`, `debugStats`);
+	debug(`Damage Mult: ${damageMult}`, `debugStats`);
+	debug(`World Damage: ${worldDamage}`, `debugStats`);
+	if (game.global.universe === 1) debug(`Block: ${block}`, `debugStats`);
+	if (game.global.universe === 1) debug(`Pierce: ${pierce}`, `debugStats`);
+	if (game.global.universe === 2) debug(`Equality: ${equality}`, `debugStats`);
+	debug(`Health: ${health}`, `debugStats`);
+	debug(`Hits to Survive: ${hitsToSurvive}`, `debugStats`);
+	debug(`finalDmg: ${finalDmg}`, `debugStats`);
 }
 
 function _calcCurrentStatsDebug() {
@@ -90,6 +90,8 @@ function _calcCurrentStatsDebug() {
 	const mapObject = mapping ? getCurrentMapObject() : { level: game.global.world, difficulty: 1 };
 	const currentCell = mapping ? getCurrentMapCell() : getCurrentWorldCell();
 	const currentEnemy = getCurrentEnemy();
+
+	const dailyRampageMult = _getRampageBonus();
 
 	const worldType = !mapping ? 'world' : mapObject.location === 'Void' ? 'void' : 'map';
 	const zone = mapObject.level;
@@ -104,13 +106,13 @@ function _calcCurrentStatsDebug() {
 	const equalityStackCount = game.global.universe === 2 ? game.portal.Equality.disabledStackCount : false;
 	const isUniverse1 = game.global.universe !== 2;
 
-	const displayedMin = calcOurDmg('min', equalityStackCount, true, worldType, 'never', mapLevel, true);
-	const displayedMax = calcOurDmg('max', equalityStackCount, true, worldType, 'never', mapLevel, true);
+	const displayedMin = calcOurDmg('min', equalityStackCount, true, worldType, 'never', mapLevel, true) * dailyRampageMult;
+	const displayedMax = calcOurDmg('max', equalityStackCount, true, worldType, 'never', mapLevel, true) * dailyRampageMult;
 
 	debug(`Our Stats`);
 	debug(`Our Attack: ${displayedMin.toExponential(2)} - ${displayedMax.toExponential(2)}`);
 	debug(`Our Health: ${calcOurHealth(isUniverse1, worldType).toExponential(2)}`);
-	if (game.global.universe === 1) debug(`Our Block: ${calcOurBlock(true, true).toExponential(2)}`);
+	if (game.global.universe === 1) debug(`Our Block: ${calcOurBlock(game.global.formation, true).toExponential(2)}`);
 	if (game.global.universe === 2) debug(`Our Equality: ${game.portal.Equality.disabledStackCount}`);
 	debug(`Our Crit: ${100 * getPlayerCritChance().toExponential(2)}% for ${getPlayerCritDamageMult().toFixed(2)}x damage. Average of ${getCritMulti('maybe').toFixed(2)}x`);
 
@@ -143,6 +145,15 @@ function timeForFormatting(number) {
 	return Math.floor((getGameTime() - number) / 1000);
 }
 
+function _getPortalAfterVoidSetting() {
+	if (!MODULES.mapFunctions.afterVoids) return false;
+
+	const portalSetting = challengeActive('Daily') ? getPageSetting('dailyPortal') : getPageSetting('portal');
+	if (portalSetting === 2 && getZoneEmpowerment(game.global.world) !== 'Poison') return false;
+
+	return true;
+}
+
 function _getPrimaryResourceInfo() {
 	return currSettingUniverse === 2 ? { name: 'Radon', abv: 'Rn' } : { name: 'Helium', abv: 'He' };
 }
@@ -163,8 +174,9 @@ function prestigesToGet(targetZone = game.global.world, targetPrestige = 'Gambes
 	let mapsToRun = 0;
 	let prestigeToFarmFor = 0;
 
-	const hasSciFour = (game.global.universe === 1 && game.global.sLevel >= 4) || (game.global.universe === 2 && game.buildings.Microchip.owned >= 4);
-	const prestigeInterval = challengeActive('Mapology') || !hasSciFour ? 5 : 10;
+	const runningMapo = challengeActive('Mapology');
+	const hasSciFour = !runningMapo && ((game.global.universe === 1 && game.global.sLevel >= 4) || (game.global.universe === 2 && game.buildings.Microchip.owned >= 4));
+	const prestigeInterval = !hasSciFour || challengeActive('Mapology') ? 5 : 10;
 
 	for (const p of prestigeList) {
 		if (game.equipment[game.upgrades[p].prestiges].locked) continue;
@@ -194,8 +206,25 @@ function prestigesUnboughtCount() {
 	return numUnbought;
 }
 
+function canU2OverkillAT(targetZone = game.global.world) {
+	if (!u2Mutations.tree.Overkill1.purchased) return false;
+
+	const { Overkill2, Overkill3, Liq3, Liq2 } = u2Mutations.tree;
+
+	let allowed = 0.3;
+	if (Overkill2.purchased) allowed += 0.1;
+	if (Overkill3.purchased) allowed += 0.1;
+	if (Liq3.purchased) {
+		allowed += 0.1;
+		if (Liq2.purchased) allowed += 0.1;
+	}
+
+	const hze = game.stats.highestRadLevel.valueTotal();
+	return targetZone <= hze * allowed;
+}
+
 function getCurrentEnemy(cell = 1) {
-	if (game.global.gridArray.length <= 0) return {};
+	if (game.global.gridArray.length <= 0) return { name: 'Snimp' };
 
 	const mapping = game.global.mapsActive;
 	const currentCell = mapping ? game.global.lastClearedMapCell + cell : game.global.lastClearedCell + cell;
@@ -206,59 +235,84 @@ function getCurrentEnemy(cell = 1) {
 	return game.global[mapGrid][currentCell];
 }
 
-function checkFastEnemy(enemy) {
-	const enemyName = enemy.name;
-	const mapping = game.global.mapsActive;
-	const mapObject = mapping ? getCurrentMapObject() : null;
-	const worldType = !mapping ? 'world' : mapObject.location === 'Void' ? 'void' : 'map';
+function _checkFastEnemyU1(enemy) {
+	const enemyFast = ['Corruption', 'Healthy'].includes(enemy.mutation);
+	if (enemyFast) return true;
 
-	const fastImp = MODULES.fightinfo.fastImps.includes(enemyName);
-	if (fastImp) return true;
-
-	const isDaily = challengeActive('Daily');
-	const dailyChallenge = game.global.dailyChallenge;
-	const dailyEmpower = isDaily && typeof dailyChallenge.empower !== 'undefined';
-	if (dailyEmpower && !mapping) return true;
-
-	const dailyExplosive = isDaily && typeof dailyChallenge.explosive !== 'undefined';
-	if (dailyExplosive) {
-		if (worldType === 'map' && !MODULES.maps.slowScumming) return true;
-		if (worldType === 'world') return true;
-	}
-
-	if (game.global.voidBuff === 'doubleAttack') return true;
-
-	if (game.global.universe === 1) return false;
-
-	// U2 specifics
-	if (challengeActive('Archaeology')) return true;
-	if (challengeActive('Trappapalooza')) return true;
-	if (challengeActive('Bublé') || getCurrentQuest() === 8) return true;
-	if (challengeActive('Exterminate') && game.challenges.Exterminate.experienced) return false;
-	if (challengeActive('Glass')) return true;
-	if (challengeActive('Berserk') && game.challenges.Berserk.weakened !== 20) return true;
-	if (challengeActive('Duel')) {
-		if (!mapping) return true;
-		else if (game.challenges.Duel.enemyStacks < 10) return true;
-	}
-	if (challengeActive('Revenge')) return true;
-	if (challengeActive('Smithless')) {
-		if (!mapping && game.global.world % 25 === 0 && game.global.lastClearedCell === -1 && game.global.gridArray[0].ubersmith) return true;
-	}
-	if (challengeActive('Desolation') && mapping) {
-		// Exotic mapimps in deso are bugged and slow
-		const exoticImp = MODULES.fightinfo.exoticImps.includes(enemyName);
-		return !exoticImp;
-	}
-
-	if (worldType === 'world' && game.global.world > 200 && game.global.gridArray[enemy.level - 1].u2Mutation.length > 0) return true;
+	const slow = challengeActive('Slow');
+	if (slow) return true;
 
 	return false;
 }
 
+function _checkFastEnemyU2(enemy) {
+	const mapping = game.global.mapsActive;
+
+	if (enemy.u2Mutation && enemy.u2Mutation.length > 0) return true;
+
+	if (challengeActive('Bublé') || getCurrentQuest() === 8) return true;
+	if (challengeActive('Duel')) {
+		if (!mapping) return true;
+		if (game.challenges.Duel.enemyStacks < 10) return true;
+	}
+	if (challengeActive('Archaeology')) return true;
+	if (challengeActive('Trappapalooza')) return true;
+	if (challengeActive('Berserk') && game.challenges.Berserk.weakened !== 20) return true;
+	if (challengeActive('Glass')) return true;
+	if (challengeActive('Revenge')) return true;
+	if (challengeActive('Smithless') && enemy.ubersmith) return true;
+	if (challengeActive('Desolation') && mapping) {
+		// Exotic mapimps in deso are bugged and slow
+		const exoticImp = MODULES.fightinfo.exoticImps.includes(enemy.name);
+		return !exoticImp;
+	}
+
+	return false;
+}
+
+function checkFastEnemy(enemy = getCurrentEnemy()) {
+	const mapping = game.global.mapsActive;
+	const worldType = !mapping ? 'world' : game.global.voidBuff ? 'void' : 'map';
+
+	if (game.global.universe === 1) {
+		if (challengeActive('Coordinate') || challengeActive('Nom')) return false;
+	} else if (game.global.universe === 2) {
+		if (challengeActive('Duel') && !game.global.runningChallengeSquared && game.challenges.Duel.trimpStacks < 10) return false;
+		if (challengeActive('Exterminate') && game.challenges.Exterminate.experienced) return false;
+	}
+
+	if (game.global.voidBuff === 'doubleAttack') return true;
+
+	const fastImp = MODULES.fightinfo.fastImps.includes(enemy.name);
+	if (fastImp) return true;
+
+	if (game.global.universe === 2) {
+		const isDaily = challengeActive('Daily');
+		const dailyChallenge = game.global.dailyChallenge;
+		const dailyEmpower = isDaily && typeof dailyChallenge.empower !== 'undefined';
+		if (dailyEmpower && !mapping) return true;
+
+		const dailyExplosive = isDaily && typeof dailyChallenge.explosive !== 'undefined';
+		if (dailyExplosive) {
+			if (worldType === 'map' && !MODULES.maps.slowScumming) return true;
+			if (worldType === 'world') return true;
+		}
+	}
+
+	if (game.global.universe === 1) return _checkFastEnemyU1(enemy);
+
+	if (game.global.universe === 2) return _checkFastEnemyU2(enemy);
+
+	return false;
+}
+
+/* Subtracts time paused from game time value */
 function getGameTime() {
 	const { start: startTime, time: globalTime } = game.global;
-	if (game.options.menu.pauseGame.enabled) return startTime + (game.options.menu.pauseGame.timeAtPause - startTime) + globalTime;
+
+	if (game.options.menu.pauseGame.enabled) {
+		return startTime + (game.options.menu.pauseGame.timeAtPause - startTime) + globalTime;
+	}
 
 	return startTime + globalTime;
 }
@@ -279,6 +333,10 @@ function whichHitsSurvived() {
 }
 
 function whichAutoLevel() {
-	if (getPageSetting('autoLevelTest')) return 'autoLevel';
-	else return 'original';
+	return hdStats.autoLevelLoot;
+}
+
+function whichScryVoidMaps() {
+	if (trimpStats.isDaily) return getPageSetting('dscryvoidmaps');
+	return getPageSetting('scryvoidmaps');
 }

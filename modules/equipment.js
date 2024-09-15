@@ -67,12 +67,13 @@ MODULES.equipment = {
 };
 
 function _shouldSaveResource(resourceName) {
-	const upgrades = resourceName == 'metal' ? ['Speedminer', 'Megaminer', 'Blockmaster'] : ['Speedlumber', 'Megalumber', 'Potency'];
+	let upgrades = ['Bounty', 'Efficiency', 'Coordination', 'TrainTacular'];
+	upgrades = upgrades.concat(resourceName === 'metal' ? ['Speedminer', 'Megaminer', 'Blockmaster'] : ['Speedlumber', 'Megalumber', 'Potency']);
 	const shouldSave = !challengeActive('Scientist') && (game.global.autoUpgrades || getPageSetting('upgradeType'));
 	return shouldSave && upgrades.some((up) => shouldSaveForSpeedUpgrade(game.upgrades[up]));
 }
 
-function mostEfficientEquipment(resourceSpendingPct, zoneGo = false, ignoreShield = getPageSetting('equipNoShields')) {
+function mostEfficientEquipment(resourceSpendingPct = undefined, zoneGo = false, ignoreShield = getPageSetting('equipNoShields')) {
 	if (mapSettings.pandaEquips) return pandemoniumEquipmentCheck(mapSettings.cacheGain);
 
 	const canAncientTreasure = game.mapUnlocks.AncientTreasure.canRunOnce;
@@ -84,36 +85,42 @@ function mostEfficientEquipment(resourceSpendingPct, zoneGo = false, ignoreShiel
 	return _populateMostEfficientEquipment(mostEfficientObj, canAncientTreasure, prestigeSetting, highestPrestige, prestigesAvailable, ignoreShield);
 }
 
+function calculateEquipCap(type, zoneGo = false, noPrestigeChallenge = challengeActive('Scientist') || challengeActive('Frugal'), externalCheck = false) {
+	if ((zoneGo && externalCheck) || noPrestigeChallenge) return Infinity;
+	if (mapSettings.mapName === 'Smithless Farm' && (type === 'attack' || mapSettings.equality > 0)) return Infinity;
+	return type === 'attack' ? getPageSetting('equipCapAttack') : getPageSetting('equipCapHealth');
+}
+
+function calculateResourceSpendingPct(zoneGo = false, type = 'attack', equipPercent = getPageSetting('equipPercent'), resourceSpendingPct) {
+	if (zoneGo || (mapSettings.shouldHealthFarm && type !== 'attack')) return 1;
+	if (mapSettings.mapName === 'Smithless Farm' && (type === 'attack' || mapSettings.equality > 0)) return 1;
+	return resourceSpendingPct || (equipPercent <= 0 ? 1 : Math.min(1, equipPercent / 100));
+}
+
 function _getMostEfficientObject(resourceSpendingPct, zoneGo, noPrestigeChallenge) {
 	const equipZone = getPageSetting('equipZone');
 	const equipPercent = getPageSetting('equipPercent');
 	const currentMap = getCurrentMapObject() || { location: 'world' };
 
 	const getZoneGo = (type) => zoneGo || zoneGoCheck(equipZone, type, currentMap).active;
-	const calculateResourceSpendingPct = (zoneGo, type) => {
-		if (zoneGo || (mapSettings.shouldHealthFarm && type === 'health')) return 1;
-		if (mapSettings.mapName === 'Smithless Farm' && (type === 'attack' || mapSettings.equality > 0)) return 1;
-		return resourceSpendingPct || (equipPercent <= 0 ? 1 : Math.min(1, equipPercent / 100));
-	};
-	const calculateEquipCap = (type) => {
-		if (noPrestigeChallenge) return Infinity;
-		if (mapSettings.mapName === 'Smithless Farm' && (type === 'attack' || mapSettings.equality > 0)) return Infinity;
-		return type === 'attack' ? getPageSetting('equipCapAttack') : getPageSetting('equipCapHealth');
-	};
 
-	const createObject = (type) => ({
-		name: '',
-		statPerResource: Infinity,
-		prestige: false,
-		cost: 0,
-		resourceSpendingPct: calculateResourceSpendingPct(getZoneGo(type), type),
-		zoneGo: getZoneGo(type),
-		equipCap: calculateEquipCap(type)
-	});
+	const createObject = (type) => {
+		const zoneGo = getZoneGo(type);
+		return {
+			name: '',
+			statPerResource: Infinity,
+			prestige: false,
+			cost: 0,
+			resourceSpendingPct: calculateResourceSpendingPct(zoneGo, type, equipPercent, resourceSpendingPct),
+			zoneGo: zoneGo,
+			equipCap: calculateEquipCap(type, zoneGo, noPrestigeChallenge)
+		};
+	};
 
 	return {
 		attack: createObject('attack'),
-		health: createObject('health')
+		health: createObject('health'),
+		block: createObject('block')
 	};
 }
 
@@ -127,7 +134,6 @@ function _getHighestPrestige(mostEfficient, prestigeSetting, canAncientTreasure,
 			const equipType = MODULES.equipment[equipName].stat;
 			const currentPrestige = game.equipment[equipName].prestige;
 			highestPrestige = Math.max(highestPrestige, currentPrestige);
-
 			if (prestigesAvailable || buyPrestigeMaybe(equipName).skip) continue;
 			if (prestigeSetting === 0 || (prestigeSetting === 1 && mostEfficient[equipType].zoneGo) || (prestigeSetting === 2 && !canAncientTreasure)) continue;
 
@@ -142,21 +148,26 @@ function _populateMostEfficientEquipment(mostEfficient, canAncientTreasure, pres
 	const equipMult = getEquipPriceMult();
 	const prestigePct = prestigeSetting === 2 && !canAncientTreasure ? Math.min(1, getPageSetting('equipPrestigePct') / 100) : 1;
 	const pandemonium = challengeActive('Pandemonium');
+	const healthStats = calcEquipment('attack');
+	const attackStats = calcEquipment('health');
 
 	for (const equipName in MODULES.equipment) {
 		const equipData = game.equipment[equipName];
 		if (equipData.locked || (pandemonium && game.challenges.Pandemonium.isEquipBlocked(equipName))) continue;
 		if (equipName === 'Shield') {
-			if (ignoreShield || (game.global.universe === 1 && needGymystic())) continue;
-			if (challengeActive('Hypothermia') && game.resources.wood.owned > game.challenges.Hypothermia.bonfirePrice()) continue;
+			if (ignoreShield) continue;
 
-			if (equipData.blockNow) {
-				const buildingSettings = getPageSetting('buildingSettingsArray');
-				if (getPageSetting('buildingsType') && buildingSettings.Gym && buildingSettings.Gym.enabled) {
-					const data = shieldBlockUpgrades();
-					if (data.Gym < data.Shield) continue;
+			if (game.global.universe === 1) {
+				if (needGymystic()) continue;
+
+				const { Gym } = getPageSetting('buildingSettingsArray');
+
+				if (Gym && Gym.enabled && (Gym.buyMax <= 0 || Gym.buyMax > game.buildings.Gym.owned) && getPageSetting('buildingsType')) {
+					if (hdStats.shieldGymEff.mostEfficient !== 'Shield') continue;
 				}
 			}
+
+			if (challengeActive('Hypothermia') && game.resources.wood.owned > game.challenges.Hypothermia.bonfirePrice()) continue;
 		}
 
 		const equipModule = MODULES.equipment[equipName];
@@ -164,7 +175,6 @@ function _populateMostEfficientEquipment(mostEfficient, canAncientTreasure, pres
 		const zoneGo = mostEfficient[equipType].zoneGo;
 		const resourceSpendingPct = mostEfficient[equipType].resourceSpendingPct;
 		const forcePrestige = (prestigeSetting === 1 && zoneGo) || (prestigeSetting === 2 && canAncientTreasure) || prestigeSetting === 3;
-
 		const maybeBuyPrestige = buyPrestigeMaybe(equipName, resourceSpendingPct, equipData.level);
 
 		if (forcePrestige) {
@@ -172,7 +182,10 @@ function _populateMostEfficientEquipment(mostEfficient, canAncientTreasure, pres
 			if (prestigesAvailable && !maybeBuyPrestige.prestigeAvailable) continue;
 		}
 
-		const equipCap = maybeBuyPrestige.prestigeAvailable ? Math.min(mostEfficient[equipType].equipCap, 9) : mostEfficient[equipType].equipCap;
+		let equipCap = mostEfficient[equipType].equipCap;
+		if (equipData.level >= equipCap && mostEfficient[equipType].zoneGo) equipCap = Infinity;
+		if (maybeBuyPrestige.prestigeAvailable) equipCap = Math.min(equipCap, 9);
+
 		const ancientTreasurePrestigeSkip = prestigeSetting === 2 && !canAncientTreasure && game.resources[equipModule.resource].owned * prestigePct < maybeBuyPrestige.prestigeCost;
 		const skipPrestiges = ancientTreasurePrestigeSkip || (6 > equipData.level && (prestigeSetting === 0 || (prestigeSetting === 1 && !zoneGo)));
 
@@ -192,10 +205,24 @@ function _populateMostEfficientEquipment(mostEfficient, canAncientTreasure, pres
 			safeRatio = nextLevelCost / nextLevelValue;
 		}
 
-		if (!prestige && equipData.level >= equipCap) continue;
+		if (!prestige) {
+			if (equipData.level >= equipCap) continue;
+
+			if (equipData.prestige <= highestPrestige - 2 && equipData.level >= mostEfficient[equipType].equipCap) {
+				let maxCanAfford = Math.max(1, getMaxAffordable(nextLevelCost, game.resources[equipModule.resource].owned, 1.2, true));
+				maxCanAfford = Math.min(maxCanAfford, equipCap - equipData.level);
+
+				const equipStats = equipType === 'health' ? healthStats : attackStats;
+				const statIncrease = (nextLevelValue * maxCanAfford) / equipStats;
+				if (1e-3 > statIncrease) {
+					continue;
+				}
+			}
+		}
 		if (equipName === 'Shield' && nextLevelCost > game.resources.wood.owned * resourceSpendingPct) continue;
 
-		const isMostEfficient = mostEfficient[equipType].statPerResource > safeRatio || !mostEfficient[equipType].name || (equipName === 'Shield' && mostEfficient[equipType].cost > game.resources.metal.owned * resourceSpendingPct);
+		const shieldEff = equipName === 'Shield' && equipType === 'health' && mostEfficient[equipType].cost > game.resources.metal.owned * resourceSpendingPct;
+		const isMostEfficient = mostEfficient[equipType].statPerResource > safeRatio || !mostEfficient[equipType].name || shieldEff;
 
 		if (isMostEfficient) {
 			mostEfficient[equipType] = {
@@ -216,11 +243,14 @@ function _populateMostEfficientEquipment(mostEfficient, canAncientTreasure, pres
 
 function buyPrestigeMaybe(equipName, resourceSpendingPct = 1, maxLevel = Infinity) {
 	const prestigeInfo = {
+		minNewLevel: 0,
+		newStatMinValue: 0,
 		purchase: false,
 		prestigeAvailable: false,
 		newStatValue: 0,
 		prestigeCost: 0,
 		statPerResource: 0,
+		shouldPrestige: false,
 		skip: true
 	};
 
@@ -240,7 +270,19 @@ function buyPrestigeMaybe(equipName, resourceSpendingPct = 1, maxLevel = Infinit
 	prestigeInfo.prestigeAvailable = true;
 
 	const equipment = game.equipment[equipName];
+	const equipStat = equipment.attack !== undefined ? 'attack' : resourceUsed === 'wood' && equipment.blockNow ? 'block' : 'health';
+	const currentStatValue = equipment.level * equipment[`${equipStat}Calculated`];
+	const oneLevelStat = Math.round(equipment[equipStat] * Math.pow(1.19, equipment.prestige * game.global.prestige[equipStat] + 1));
+	const prestigeCost = getNextPrestigeCost(prestigeUpgradeName) * getEquipPriceMult();
 
+	// TODO Should consider Maybe Prestige, Force Prestige, etc
+	const minLevelBeforePrestige = getPageSetting('equip2') && ![2, 3].includes(getPageSetting('equipPrestige')) ? 2 : 1;
+	prestigeInfo.shouldPrestige = (equipment.level === 0 || equipment.level >= minLevelBeforePrestige) && game.resources.gems.owned > 0;
+	prestigeInfo.minNewLevel = Math.min(maxLevel, Math.ceil(0.25 + currentStatValue / oneLevelStat));
+	prestigeInfo.newStatMinValue = oneLevelStat * prestigeInfo.minNewLevel;
+	prestigeInfo.prestigeCost = prestigeCost;
+
+	if (_shouldSaveResource(resourceUsed)) return prestigeInfo;
 	const {
 		science: [scienceCost, scienceMultiplier],
 		gems: [gemsCost, gemsMultiplier]
@@ -254,16 +296,11 @@ function buyPrestigeMaybe(equipName, resourceSpendingPct = 1, maxLevel = Infinit
 		return prestigeInfo;
 	}
 
-	const equipStat = equipment.attack !== undefined ? 'attack' : resourceUsed === 'wood' && equipment.blockNow ? 'block' : 'health';
-
-	const prestigeCost = getNextPrestigeCost(prestigeUpgradeName) * getEquipPriceMult();
 	const newLevel = Math.max(1, Math.min(maxLevel, 1 + Math.max(0, Math.floor(getMaxAffordable(prestigeCost * 1.2, (game.resources[resourceUsed].owned - prestigeCost) * resourceSpendingPct, 1.2, true)))));
-	const oneLevelStat = Math.round(equipment[equipStat] * Math.pow(1.19, equipment.prestige * game.global.prestige[equipStat] + 1));
 	const newStatValue = newLevel * oneLevelStat;
-	const currentStatValue = equipment.level * equipment[`${equipStat}Calculated`];
 	const statPerResource = prestigeCost / oneLevelStat;
 
-	prestigeInfo.purchase = newStatValue > currentStatValue;
+	prestigeInfo.purchase = prestigeInfo.shouldPrestige && (newLevel >= prestigeInfo.minNewLevel || equipment.level === 0);
 	prestigeInfo.newStatValue = newStatValue;
 	prestigeInfo.prestigeCost = prestigeCost;
 	prestigeInfo.statPerResource = statPerResource;
@@ -274,7 +311,7 @@ function buyPrestigeMaybe(equipName, resourceSpendingPct = 1, maxLevel = Infinit
 }
 
 //Check to see if we are in the zone range that the user set
-function zoneGoCheck(setting, farmType, mapType = { location: 'world' }) {
+function zoneGoCheck(setting = getPageSetting('equipZone'), farmType = 'attack', mapType = { location: 'world' }) {
 	const zoneDetails = {
 		active: true,
 		zone: game.global.world
@@ -285,11 +322,19 @@ function zoneGoCheck(setting, farmType, mapType = { location: 'world' }) {
 	else if (mapType.location === 'Bionic' || (mapSettings.mapName === 'Bionic Raiding' && trimpStats.autoMaps)) hdRatio = hdStats.hdRatioMap;
 
 	if (farmType === 'attack') {
-		if (hdRatio > getPageSetting('equipCutOffHD')) return zoneDetails;
+		if (MODULES.buildings.betaHouseEfficiency) {
+			const formation = game.global.world < 60 || game.global.highestLevelCleared < 180 ? 'X' : 'S';
+			if (hdRatio > getPageSetting('equipCutOffHD') && oneShotZone(mapType.location, formation) < maxOneShotPower()) return zoneDetails;
+		} else {
+			if (hdRatio > getPageSetting('equipCutOffHD')) return zoneDetails;
+		}
+
 		if (mapSettings.mapName === 'Wither Farm' || mapSettings.mapName === 'Smithless Farm') return zoneDetails;
 	}
-	if (farmType === 'health') {
-		if (whichHitsSurvived() < getPageSetting('equipCutOffHS') || mapSettings.shouldHealthFarm) return zoneDetails;
+
+	if (farmType === 'health' || farmType === 'block') {
+		const hitsSurvived = whichHitsSurvived();
+		if (hitsSurvived < getPageSetting('equipCutOffHS') || mapSettings.shouldHealthFarm) return zoneDetails;
 		if ((mapSettings.mapName === 'Smithless Farm' || mapSettings.mapName === 'Wither Farm') && mapSettings.equality > 0) return zoneDetails;
 		if (game.global.universe === 2 && hdRatio > getPageSetting('equipCutOffHD') && getPerkLevel('Equality') > 0) return zoneDetails;
 	}
@@ -314,29 +359,19 @@ function zoneGoCheck(setting, farmType, mapType = { location: 'world' }) {
 }
 
 function autoEquip() {
-	const { Miners, Efficiency, Coordination, TrainTacular } = game.upgrades;
 	if (!getPageSetting('equipOn')) return;
+	const { Miners, Efficiency, Coordination, TrainTacular } = game.upgrades;
 
-	//Saves resources for upgrades
 	if (!challengeActive('Scientist') && (game.global.autoUpgrades || getPageSetting('upgradeType'))) {
 		if ([Efficiency, Coordination, TrainTacular].some((up) => shouldSaveForSpeedUpgrade(up))) return;
-		if (!Miners.done && !challengeActive('Metal')) return;
+		if (!Miners.done && !challengeActive('Metal') && !challengeActive('Transmute')) return;
 	}
-	//If running a wood or metal quest then disable autoequip
+
 	if ([2, 3].includes(getCurrentQuest())) return;
 	if (mapSettings.mapName === 'Smithy Farm' || settingChangedTimeout) return;
-	if (game.mapUnlocks.AncientTreasure.canRunOnce) {
-		if (mapSettings.ancientTreasure) return;
-		if (MODULES.mapFunctions.runUniqueMap === getAncientTreasureName()) return;
-		if (game.global.mapsActive && getCurrentMapObject().name === getAncientTreasureName()) return;
-	}
+	if (runningAncientTreasure()) return;
 
 	if (_autoEquipTimeWarp()) return;
-
-	let prestigeLeft = false;
-	do {
-		prestigeLeft = buyEquipsPrestige();
-	} while (prestigeLeft);
 
 	let equipLeft = false;
 	do {
@@ -353,28 +388,10 @@ function _autoEquipTimeWarp() {
 	const dontWhileLoop = usingRealTimeOffline || atSettings.loops.atTimeLapseFastLoop || liquifiedZone();
 	if (!dontWhileLoop) return false;
 
-	buyEquipsPrestige();
 	buyEquipsAlways2();
 	buyEquips();
 
 	return true;
-}
-
-function buyEquipsPrestige() {
-	if (getPageSetting('equipPrestige') !== 3) return false;
-	let prestigeLeft = false;
-
-	for (let equipName in game.equipment) {
-		const prestigeInfo = buyPrestigeMaybe(equipName);
-		if (!game.equipment[equipName].locked && !prestigeInfo.skip) {
-			if (game.resources[prestigeInfo.resource].owned < prestigeInfo.prestigeCost) continue;
-			buyUpgrade(MODULES.equipment[equipName].upgrade, true, true);
-			prestigeLeft = true;
-			debug(`Upgrading ${equipName} - Prestige ${game.equipment[equipName].prestige}`, `equipment`, '*upload');
-		}
-	}
-
-	return prestigeLeft;
 }
 
 function buyEquipsAlways2() {
@@ -382,17 +399,16 @@ function buyEquipsAlways2() {
 	const alwaysPandemonium = trimpStats.currChallenge === 'Pandemonium' && !mapSettings.pandaEquips && getPageSetting('pandemoniumAE') > 0;
 	if (!alwaysLvl2 && !alwaysPandemonium) return false;
 
+	let equipLeft = false;
 	const saveResources = {
 		metal: _shouldSaveResource('metal'),
 		wood: _shouldSaveResource('wood')
 	};
-	let equipLeft = false;
 
 	for (let equip in game.equipment) {
 		if (!game.equipment[equip].locked) {
 			if (!canAffordBuilding(equip, false, false, true, false, 1)) continue;
 			if (trimpStats.currChallenge === 'Pandemonium' && game.challenges.Pandemonium.isEquipBlocked(equip)) continue;
-
 			if (saveResources[MODULES.equipment[equip].resource]) continue;
 
 			if (alwaysLvl2 && game.equipment[equip].level < 2) {
@@ -402,8 +418,8 @@ function buyEquipsAlways2() {
 
 			if (alwaysPandemonium) {
 				buyEquipment(equip, true, true, 1);
-				equipLeft = true;
 				debug(`Upgrading 1 ${equip}`, `equipment`, `*upload3`);
+				equipLeft = true;
 			}
 		}
 	}
@@ -413,7 +429,9 @@ function buyEquipsAlways2() {
 
 function buyEquips() {
 	const bestBuys = mostEfficientEquipment();
-	const equipTypes = ['attack', 'health'].sort((a, b) => bestBuys[a].cost - bestBuys[b].cost);
+	const equipTypeList = ['attack', 'health'];
+	if (game.global.universe === 1) equipTypeList.push('block');
+	const equipTypes = equipTypeList.sort((a, b) => bestBuys[a].cost - bestBuys[b].cost);
 	let keepBuying = false;
 
 	const saveResources = {
@@ -447,12 +465,15 @@ function buyEquips() {
 		}
 	}
 
+	/* if (keepBuying && mapSettings.mapName === 'HD Ratio') hdStats.hdRatio = calcHDRatio(game.global.world, 'world', false, 1);
+	if (keepBuying && mapSettings.mapName === 'Hits Survived') hdStats.hitsSurvived = calcHitsSurvived(game.global.world, 'world', 1); */
+
 	return keepBuying;
 }
 
 function displayMostEfficientEquipment(forceUpdate = false) {
-	if (!getPageSetting('equipEfficientEquipDisplay')) return;
 	if (!atSettings.intervals.oneSecond && !forceUpdate) return;
+	if (!getPageSetting('equipEfficientEquipDisplay')) return;
 	if (game.options.menu.equipHighlight.enabled > 0) toggleSetting('equipHighlight');
 
 	const bestBuys = mostEfficientEquipment(1, undefined, true);
@@ -464,16 +485,17 @@ function displayMostEfficientEquipment(forceUpdate = false) {
 		const equipType = MODULES.equipment[item].stat;
 		const prestigeElement = document.getElementById(prestigeName);
 		let itemElement = document.getElementById(item);
-		//Looking at the prestiges for each item to see if it's available and if so then add the efficient class to it
+
+		/* 	Looking at the prestiges for each item to see if it's available and if so then add the efficient class to it */
 		if (game.upgrades[prestigeName].locked === 0 && prestigeElement) {
-			//If the prestige doesn't have the efficient class then add it
+			/* 	If the prestige doesn't have the efficient class then add it */
 			if (!prestigeElement.classList.contains('efficient')) prestigeElement.classList.add('efficient');
-			//Remove the swap the efficient class to efficientNo if the prestige isn't the most efficient thing to purchase
+			/* 	Swap the efficient class to efficientNo if the prestige isn't the most efficient thing to purchase */
 			if (prestigeElement.classList.contains('efficientYes') && (item !== bestBuys[equipType].name || (item === bestBuys[equipType].name && !bestBuys[equipType].prestige))) swapClass('efficient', 'efficientNo', prestigeElement);
 		}
 
-		//If we are looking at the most efficient item, and it's not a prestige, then add the efficientYes class to it
-		//If the equipment already has the efficientYes class swap it to efficientNo
+		/* 	When looking at the most efficient item, and it's not a prestige, then add the efficientYes class to it
+			If the equipment already has the efficientYes class swap it to efficientNo */
 		if (item === bestBuys[equipType].name && bestBuys[equipType].prestige && itemElement) {
 			if (itemElement.classList.contains('efficientYes')) swapClass('efficient', 'efficientNo', itemElement);
 			bestBuys[equipType].name = prestigeName;

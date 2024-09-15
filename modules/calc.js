@@ -17,12 +17,14 @@ class TrimpStats {
 		this.hze = universe === 2 ? highestRadLevel.valueTotal() : highestLevel.valueTotal();
 		this.hypPct = liquification3Purchased ? 75 : hyperspeed2Purchased ? 50 : 0;
 		this.hyperspeed2 = global.world <= Math.floor(this.hze * (this.hypPct / 100));
+		this.fluffyRewards = updateFluffyRewards();
+
 		this.autoMaps = getPageSetting('autoMaps') > 0;
 
 		this.mapSize = talents.mapLoot2.purchased ? 20 : 25;
 		this.mapDifficulty = 0.75;
-		this.perfectMaps = this.hze >= universe === 2 ? 30 : 110;
-		this.plusLevels = this.hze >= universe === 2 ? 50 : 210;
+		this.perfectMaps = this.hze >= (universe === 2 ? 30 : 110);
+		this.plusLevels = this.hze >= (universe === 2 ? 50 : 210);
 		this.mapSpecial = getAvailableSpecials('lmc');
 		this.mapBiome = getBiome();
 
@@ -34,7 +36,6 @@ class TrimpStats {
 
 class HDStats {
 	constructor() {
-		this.autoLevel = hdStats.autoLevel;
 		this.autoLevelInitial = hdStats.autoLevelInitial;
 		this.autoLevelZone = hdStats.autoLevelZone;
 		this.autoLevelData = hdStats.autoLevelData;
@@ -42,32 +43,18 @@ class HDStats {
 		this.autoLevelSpeed = hdStats.autoLevelSpeed;
 
 		const { world, universe } = game.global;
+		const checkAutoLevel = this.autoLevelInitial === undefined || (usingRealTimeOffline ? atSettings.intervals.thirtySecond : atSettings.intervals.fiveSecond);
 
+		const mapDifficulty = game.global.mapsActive && MODULES.maps.lastMapWeWereIn.location === 'Bionic' ? 2.6 : 0.75;
 		const voidMaxTenacity = getPageSetting('voidMapSettings')[0].maxTenacity;
-		const autoLevel = whichAutoLevel();
-
-		let voidPercent = 4.5;
-		if (world <= 59) {
-			voidPercent -= 2;
-			if (universe === 1) voidPercent /= 2;
-		} else if (universe === 1 && world <= 199) {
-			voidPercent -= 1;
-		}
-
-		const mapDifficulty = game.global.mapsActive && getCurrentMapObject().location === 'Bionic' ? 2.6 : 0.75;
-		if (challengeActive('Mapocalypse')) voidPercent += 3;
+		const voidPercent = _getVoidPercent(world, universe);
 
 		this.hdRatio = calcHDRatio(world, 'world', false, 1);
 		this.hdRatioMap = calcHDRatio(world, 'map', false, mapDifficulty);
 		this.hdRatioVoid = calcHDRatio(world, 'void', false, voidPercent);
 
-		this.hdRatioPlus = calcHDRatio(world + 1, 'world', false, 1);
-		this.hdRatioMapPlus = calcHDRatio(world + 1, 'map', false, mapDifficulty);
-		this.hdRatioVoidPlus = calcHDRatio(world + 1, 'void', false, voidPercent);
-
 		this.vhdRatio = voidMaxTenacity ? calcHDRatio(world, 'world', voidMaxTenacity, 1) : this.hdRatio;
 		this.vhdRatioVoid = voidMaxTenacity ? calcHDRatio(world, 'void', voidMaxTenacity, voidPercent) : this.hdRatioVoid;
-		this.vhdRatioVoidPlus = voidMaxTenacity ? calcHDRatio(world + 1, 'void', voidMaxTenacity, voidPercent) : this.hdRatioVoidPlus;
 
 		this.hdRatioHeirloom = calcHDRatio(world, 'world', false, 1, false);
 
@@ -75,29 +62,62 @@ class HDStats {
 		this.hitsSurvivedMap = calcHitsSurvived(world, 'map', mapDifficulty);
 		this.hitsSurvivedVoid = calcHitsSurvived(world, 'void', voidPercent);
 
-		if (autoLevel === 'original') this.autoLevel = autoMapLevel();
-		else {
-			const checkAutoLevel = this.autoLevelInitial === undefined ? true : usingRealTimeOffline ? atSettings.intervals.thirtySecond : atSettings.intervals.fiveSecond;
+		/* U1 specific checks */
+		const worldType = _getTargetWorldType();
+		const hitsBefore = worldType === 'void' ? this.hitsSurvivedVoid : this.hitsSurvived;
+		this.shieldGymEff = shieldGymEfficiency(hitsBefore);
+		this.biomeEff = biomeEfficiency(undefined, hitsBefore, undefined, this.shieldGymEff);
+		if (checkAutoLevel) {
+			this.autoLevelInitial = stats();
+			this.autoLevelZone = world;
+			this.autoLevelData = get_best(this.autoLevelInitial, true);
 
-			if (checkAutoLevel) {
-				this.autoLevelInitial = stats();
-				this.autoLevelZone = world;
-				this.autoLevelData = get_best(this.autoLevelInitial, true);
+			this.autoLevelZoneDeso = world;
+			this.autoLevelDesolation = challengeActive('Desolation') ? stats(lootDestack) : this.autoLevelInitial;
 
-				const findResult = Object.entries(this.autoLevelInitial[0]).find(([key, data]) => data.mapLevel === 0);
-				const worldMap = findResult ? findResult[1] : undefined;
-				const { loot, speed } = this.autoLevelData;
+			const findResult = Object.entries(this.autoLevelInitial[0]).find(([key, data]) => data.mapLevel === 0);
+			const worldMap = findResult ? findResult[1] : undefined;
+			const { loot, speed } = this.autoLevelData;
 
-				if (worldMap && worldMap[loot.stance] && worldMap[speed.stance]) {
-					loot.mapLevel = loot.mapLevel === -1 && loot.value === worldMap[loot.stance].value ? 0 : loot.mapLevel;
-					speed.mapLevel = speed.mapLevel === -1 && speed.killSpeed === worldMap[speed.stance].killSpeed ? 0 : speed.mapLevel;
-				}
-
-				this.autoLevelLoot = this.autoLevelData.loot.mapLevel;
-				this.autoLevelSpeed = this.autoLevelData.speed.mapLevel;
+			if (worldMap && worldMap[loot.stance] && worldMap[speed.stance]) {
+				loot.mapLevel = loot.mapLevel === -1 && loot.value === worldMap[loot.stance].value ? 0 : loot.mapLevel;
+				speed.mapLevel = speed.mapLevel === -1 && speed.killSpeed === worldMap[speed.stance].killSpeed ? 0 : speed.mapLevel;
 			}
+
+			this.autoLevelLoot = this.autoLevelData.loot.mapLevel;
+			this.autoLevelSpeed = this.autoLevelData.speed.mapLevel;
 		}
 	}
+}
+
+class ExtraItem {
+	constructor(name, extraLevels, shouldPrestige) {
+		this.name = name;
+		this.extraLevels = extraLevels;
+		this.shouldPrestige = shouldPrestige;
+	}
+}
+
+function _getVoidMapsObjects() {
+	return game.global.mapsOwnedArray.filter((map) => map.location === 'Void');
+}
+
+function _getVoidPercent(world = game.global.world, universe = game.global.universe) {
+	const ownedVoidMaps = _getVoidMapsObjects();
+
+	if (ownedVoidMaps.length) return ownedVoidMaps.reduce((worstDiff, currentMap) => Math.max(worstDiff, currentMap.difficulty), 0);
+
+	let voidPercent = 4.5;
+	if (world <= 59) {
+		voidPercent -= 2;
+		if (universe === 1) voidPercent /= 2;
+	} else if (universe === 1 && world <= 199) {
+		voidPercent -= 1;
+	}
+
+	if (challengeActive('Mapocalypse')) voidPercent += 3;
+
+	return voidPercent;
 }
 
 function applyMultipliers(multipliers, stat, challenge, postChallengeCheck) {
@@ -125,6 +145,10 @@ function _getWorldType() {
 	return !game.global.mapsActive ? 'world' : game.global.voidBuff ? 'void' : 'map';
 }
 
+function _getTargetWorldType() {
+	return mapSettings.voidTrigger || game.global.voidBuff ? 'void' : 'world';
+}
+
 function _getZone(worldType = _getWorldType()) {
 	return ['world', 'void'].includes(worldType) || !game.global.mapsActive ? game.global.world : getCurrentMapObject().level;
 }
@@ -137,17 +161,26 @@ function _getEnemyName(name = 'Chimp') {
 	return getCurrentEnemy().name || { name };
 }
 
-function calcEquipment(equipType = 'attack') {
+function calcEquipment(equipType = 'attack', extraItem = new ExtraItem()) {
 	let bonus = 0;
 	let equipmentList;
 
 	if (equipType === 'attack') equipmentList = ['Dagger', 'Mace', 'Polearm', 'Battleaxe', 'Greatsword', 'Arbalest'];
 	else equipmentList = ['Shield', 'Boots', 'Helmet', 'Pants', 'Shoulderguards', 'Breastplate', 'Gambeson'];
 
-	for (let i = 0; i < equipmentList.length; i++) {
-		const equip = game.equipment[equipmentList[i]];
-		if (equip.locked) continue;
-		bonus += equip.level * equip[equipType + 'Calculated'];
+	for (let name of equipmentList) {
+		const equip = game.equipment[name];
+		if (equip.locked || equip.blockNow) continue;
+
+		if (name === extraItem.name) {
+			const level = extraItem.extraLevels + (extraItem.shouldPrestige ? 1 : equip.level);
+			const prestigeLevel = equip.prestige + (extraItem.shouldPrestige ? 0 : -1);
+			const newStatsPerLevel = prestigeLevel ? Math.round(equip[equipType] * Math.pow(1.19, prestigeLevel * game.global.prestige[equipType] + 1)) : equip[equipType];
+			bonus += level * newStatsPerLevel;
+			continue;
+		}
+
+		bonus += equip[equipType + 'Calculated'] * equip.level;
 	}
 
 	return bonus;
@@ -170,7 +203,7 @@ function calcSpire(what = 'attack', cell, name, checkCell) {
 
 	const spireNum = Math.floor((game.global.world - 100) / 100);
 	const enemy = name ? name : game.global.gridArray[cell - 1].name;
-	let base = what === 'attack' ? calcEnemyBaseAttack('world', game.global.world, 100, enemy) : 2 * calcEnemyBaseHealth('world', game.global.world, 100, enemy);
+	let base = what === 'attack' ? calcEnemyBaseAttack('world', game.global.world, 100, 'Chimp') : 2 * calcEnemyBaseHealth('world', game.global.world, 100, 'Chimp');
 	let mod = what === 'attack' ? 1.17 : 1.14;
 
 	if (spireNum > 1) {
@@ -180,18 +213,19 @@ function calcSpire(what = 'attack', cell, name, checkCell) {
 	}
 
 	base *= Math.pow(mod, cell);
+	base *= game.badGuys[enemy][what];
 
 	if (cell !== 100 && challengeActive('Domination')) base /= what === 'attack' ? 25 : 75;
 
 	return base;
 }
 
-function getTrimpHealth(realHealth, worldType = _getWorldType()) {
+function getTrimpHealth(realHealth, worldType = _getWorldType(), extraItem = new ExtraItem()) {
 	if (realHealth) return game.global.soldierHealthMax;
 
 	const heirloomToCheck = typeof atSettings !== 'undefined' ? heirloomShieldToEquip(worldType) : null;
 	const heirloom = heirloomToCheck ? calcHeirloomBonus_AT('Shield', 'trimpHealth', 1, false, heirloomToCheck) : calcHeirloomBonus('Shield', 'trimpHealth', 1, false);
-	let health = (50 + calcEquipment('health')) * game.resources.trimps.maxSoldiers;
+	let health = (50 + calcEquipment('health', extraItem)) * game.resources.trimps.maxSoldiers;
 
 	const healthMultipliers = {
 		toughness: () => (getPerkLevel('Toughness') > 0 ? 1 + getPerkLevel('Toughness') * getPerkModifier('Toughness') : 1),
@@ -210,7 +244,7 @@ function getTrimpHealth(realHealth, worldType = _getWorldType()) {
 	if (game.global.universe === 1) {
 		const healthMultipliers = {
 			formation: () => (game.global.formation !== 0 && game.global.formation !== 5 ? (game.global.formation === 1 ? 4 : 0.5) : 1),
-			geneticist: () => (game.global.lowestGen >= 0 > 0 ? Math.pow(1.01, game.global.lastLowGen) : 1),
+			geneticist: () => Math.pow(1.01, game.global.lastLowGen),
 			amalgamator: () => game.jobs.Amalgamator.getHealthMult(),
 			toughness_II: () => (getPerkLevel('Toughness_II') > 0 ? 1 + getPerkModifier('Toughness_II') * getPerkLevel('Toughness_II') : 1),
 			magma: () => mutations.Magma.getTrimpDecay(),
@@ -256,11 +290,27 @@ function getTrimpHealth(realHealth, worldType = _getWorldType()) {
 	return health;
 }
 
-function calcOurHealth(stance = false, worldType = _getWorldType(), realHealth = false, fullGeneticist) {
-	let health = getTrimpHealth(realHealth, worldType);
+function calcOurHealth(stance = false, worldType = _getWorldType(), realHealth = false, fullGeneticist = false, extraItem = new ExtraItem()) {
+	let health = getTrimpHealth(realHealth, worldType, extraItem);
 
 	if (game.global.universe === 1) {
-		if (!stance && game.global.formation !== 0 && game.global.formation !== 5) health /= game.global.formation === 1 ? 4 : 0.5;
+		if (![0, 5].includes(game.global.formation)) health /= game.global.formation === 1 ? 4 : 0.5;
+
+		const formationLetter = ['X', 'H', 'D', 'B', 'S', 'W'];
+		if (typeof stance === 'number') stance = formationLetter[Math.floor(stance)];
+
+		if (stance) {
+			const stanceMultipliers = {
+				X: 1,
+				H: 4,
+				D: 0.5,
+				B: 0.5,
+				S: 0.5,
+				W: 1
+			};
+
+			health *= stanceMultipliers[stance] || 1;
+		}
 
 		const geneticist = game.jobs.Geneticist;
 		if (fullGeneticist && geneticist.owned > 0) health *= Math.pow(1.01, geneticist.owned - game.global.lastLowGen);
@@ -276,52 +326,99 @@ function calcOurHealth(stance = false, worldType = _getWorldType(), realHealth =
 	return health;
 }
 
-function calcOurBlock(stance, realBlock) {
+function calcOurBlock(stance = false, realBlock = false, worldType = _getWorldType(), extraGyms = 0, extraItem = new ExtraItem()) {
 	if (game.global.universe === 2) return 0;
 
 	let block = 0;
 
 	if (realBlock) {
 		block = game.global.soldierCurrentBlock;
+		if (block === null) return 0;
 		if (stance || game.global.formation === 0) return block;
 		if (game.global.formation === 3) return block / 4;
 		return block * 2;
 	}
 
+	const heirloomToCheck = typeof atSettings !== 'undefined' ? heirloomShieldToEquip(worldType) : null;
+
 	const gym = game.buildings.Gym;
-	if (gym.owned > 0) block += gym.owned * gym.increase.by;
+	const owned = gym.owned + extraGyms;
+
+	const Gymystic = game.upgrades.Gymystic;
+	const gymysticFactor = Gymystic.done ? Gymystic.modifier + 0.01 * (Gymystic.done - 1) : 1;
+	const increaseBy = gym.increase.by * Math.pow(gymysticFactor, extraGyms);
+
+	if (owned > 0) block += owned * increaseBy;
 
 	const shield = game.equipment.Shield;
-	if (shield.blockNow && shield.level > 0) block += shield.level * shield.blockCalculated;
+
+	if (shield.blockNow) {
+		if (extraItem.name === 'Shield') {
+			const level = extraItem.extraLevels + (extraItem.shouldPrestige ? 1 : shield.level);
+			const prestigeLevel = shield.prestige + (extraItem.shouldPrestige ? 0 : -1);
+			const newStatsPerLevel = Math.round(shield.block * Math.pow(1.19, prestigeLevel * game.global.prestige['block'] + 1));
+			block += level * newStatsPerLevel;
+		} else block += shield.level * shield.blockCalculated;
+	}
 
 	const trainer = game.jobs.Trainer;
 	if (trainer.owned > 0) {
 		const trainerStrength = trainer.owned * (trainer.modifier / 100);
-		block *= 1 + calcHeirloomBonus('Shield', 'trainerEfficiency', trainerStrength);
+		const trainerHeirloom = heirloomToCheck ? calcHeirloomBonus_AT('Shield', 'trainerEfficiency', 1, false, heirloomToCheck) : calcHeirloomBonus('Shield', 'trainerEfficiency', 1, false);
+		block *= 1 + trainerStrength * trainerHeirloom;
 	}
 
+	/* GS has this for some reason and it was impacting block calcs a tiny bit */
+	block = Math.floor(block);
+
+	const formationLetter = ['X', 'H', 'D', 'B', 'S', 'W'];
+	if (typeof stance === 'number') stance = formationLetter[Math.floor(stance)];
+
+	if (stance) {
+		const stanceMultipliers = {
+			X: 1,
+			H: 0.5,
+			D: 0.5,
+			B: 4,
+			S: 0.5,
+			W: 1
+		};
+
+		block *= stanceMultipliers[stance] || 1;
+	}
+
+	const heirloomBonus = heirloomToCheck ? calcHeirloomBonus_AT('Shield', 'trimpBlock', 1, false, heirloomToCheck) : calcHeirloomBonus('Shield', 'trimpBlock', 1, false);
+	block *= heirloomBonus;
 	block *= game.resources.trimps.maxSoldiers;
-
-	if (stance && game.global.formation !== 0) block *= game.global.formation === 3 ? 4 : 0.5;
-
-	const heirloomBonus = calcHeirloomBonus('Shield', 'trimpBlock', 0, true);
-	if (heirloomBonus > 0) block *= heirloomBonus / 100 + 1;
 
 	return block;
 }
 
-function _getAnticipationBonus(stacks = game.global.antiStacks) {
-	const maxStacks = game.talents.patience.purchased ? 45 : 30;
+function _getAnticipationBonus(stacks = game.global.antiStacks, currentBonus = false, breedtimer = false) {
+	let maxStacks = game.talents.patience.purchased ? 45 : 30;
+	if (breedtimer) maxStacks = Math.min(breedtimer, maxStacks);
 	const perkMult = getPerkLevel('Anticipation') * getPerkModifier('Anticipation');
-	const stacks45 = typeof autoTrimpSettings === 'undefined' ? maxStacks : getPageSetting('45stacks');
+	const stacks45 = typeof autoTrimpSettings === 'undefined' ? maxStacks : currentBonus ? false : getPageSetting('45stacks');
 
 	return stacks45 ? 1 + maxStacks * perkMult : 1 + stacks * perkMult;
+}
+
+function _getRampageBonus(maxStacks = false) {
+	if (!challengeActive('Daily') || typeof game.global.dailyChallenge.rampage === 'undefined') return 1;
+
+	const { strength, stacks } = game.global.dailyChallenge.rampage;
+
+	if (maxStacks) {
+		return dailyModifiers.rampage.getMult(strength, dailyModifiers.rampage.getMaxStacks(strength));
+	}
+
+	return dailyModifiers.rampage.getMult(strength, stacks);
 }
 
 function _getTrimpIceMult(realDamage) {
 	if (getEmpowerment() !== 'Ice') return 1;
 
-	if (realDamage || (typeof atSettings !== 'undefined' && !getPageSetting('fullice'))) {
+	if (realDamage || (typeof atSettings !== 'undefined' && !getPageSetting('fullIce'))) {
 		return 1 + game.empowerments.Ice.getDamageModifier();
 	} else {
 		const afterTransfer = 1 + Math.ceil(game.empowerments.Ice.currentDebuffPower * getRetainModifier('Ice'));
@@ -349,7 +446,7 @@ function addPoison(realDamage, zone = game.global.world) {
 	if (getEmpowerment(zone) !== 'Poison') return 0;
 	if (realDamage) return game.empowerments.Poison.getDamage();
 	//Dynamically determines how much we are benefiting from poison based on Current Amount * Transfer Rate
-	if (typeof atSettings !== 'undefined' && getPageSetting('addpoison')) return game.empowerments.Poison.getDamage() * getRetainModifier('Poison');
+	if (typeof atSettings !== 'undefined' && getPageSetting('addPoison')) return game.empowerments.Poison.getDamage() * getRetainModifier('Poison');
 	return 0;
 }
 
@@ -386,6 +483,7 @@ function getTrimpAttack(realDamage) {
 function calcOurDmg(minMaxAvg = 'avg', universeSetting, realDamage = false, worldType = _getWorldType(), critMode, mapLevel = _getZone(worldType) - game.global.world, useTitimp = false, specificHeirloom = false) {
 	const runningAutoTrimps = typeof atSettings !== 'undefined';
 	const heirloomToCheck = !runningAutoTrimps ? null : !specificHeirloom ? heirloomShieldToEquip(worldType) : specificHeirloom;
+
 	const heirloom = heirloomToCheck ? calcHeirloomBonus_AT('Shield', 'trimpAttack', 1, false, heirloomToCheck) : calcHeirloomBonus('Shield', 'trimpAttack', 1, false);
 	const specificStance = game.global.universe === 1 ? universeSetting : false;
 	const fluctChallenge = challengeActive('Discipline') || challengeActive('Unlucky');
@@ -485,7 +583,7 @@ function calcOurDmg(minMaxAvg = 'avg', universeSetting, realDamage = false, worl
 
 		const equalityLevel = getPerkLevel('Equality');
 		if (equalityLevel > 0 && universeSetting > 0) {
-			const equalityMult = runningAutoTrimps ? getPlayerEqualityMult_AT(heirloomToCheck) : game.portal.Equality.getMult(true);
+			const equalityMult = runningAutoTrimps ? getPlayerEqualityMult_AT(heirloomToCheck) : game.portal.Equality.getModifier(true);
 			attack *= Math.pow(equalityMult, universeSetting);
 		}
 	}
@@ -493,14 +591,12 @@ function calcOurDmg(minMaxAvg = 'avg', universeSetting, realDamage = false, worl
 	if (challengeActive('Daily')) {
 		if (game.talents.daily.purchased) attack *= 1.5;
 
-		const dailyChallenge = game.global.dailyChallenge;
 		const worldLevel = game.global.world + (worldType !== 'map' ? mapLevel : 0);
 
 		minFluct -= applyDailyMultipliers('minDamage', 0);
 		maxFluct += applyDailyMultipliers('maxDamage', 0);
 		if (worldLevel % 2 === 1) attack *= applyDailyMultipliers('oddTrimpNerf', 1);
 		if (worldLevel % 2 === 0) attack *= applyDailyMultipliers('evenTrimpBuff', 1);
-		if (worldType === 'map' && typeof game.global.dailyChallenge.rampage !== 'undefined') attack *= dailyModifiers.rampage.getMult(dailyChallenge.rampage.strength, dailyModifiers.rampage.getMaxStacks(dailyChallenge.rampage.strength));
 	}
 
 	critMode = runningAutoTrimps && getPageSetting('floorCritCalc') ? 'never' : critMode || 'never';
@@ -514,7 +610,7 @@ function calcOurDmg(minMaxAvg = 'avg', universeSetting, realDamage = false, worl
 }
 
 function getCritPower(enemy = getCurrentEnemy(), block = game.global.soldierCurrentBlock, health = game.global.soldierHealth) {
-	const ignoreCrits = typeof atSettings !== 'undefined' ? getPageSetting('IgnoreCrits') : 0;
+	const ignoreCrits = typeof atSettings !== 'undefined' && game.global.universe === 1 ? getPageSetting('ignoreCrits') || 0 : 0;
 	if (ignoreCrits === 2) return 0;
 
 	const outputs = {
@@ -545,7 +641,7 @@ function getCritPower(enemy = getCurrentEnemy(), block = game.global.soldierCurr
 
 function badGuyCritMult(enemy = getCurrentEnemy(), critPower = 2, block = game.global.soldierCurrentBlock, health = game.global.soldierHealth) {
 	if (critPower <= 0) return 1;
-	const ignoreCrits = typeof atSettings !== 'undefined' ? getPageSetting('IgnoreCrits') : 0;
+	const ignoreCrits = typeof atSettings !== 'undefined' && game.global.universe === 1 ? getPageSetting('ignoreCrits') || 0 : 0;
 	if (ignoreCrits === 2) return 1;
 
 	let regular = 1;
@@ -565,7 +661,7 @@ function badGuyCritMult(enemy = getCurrentEnemy(), critPower = 2, block = game.g
 	return Math.max(regular, challenge);
 }
 
-function calcEnemyBaseAttack(worldType = _getWorldType(), zone = _getZone(worldType), cell = _getCell(worldType), name = _getEnemyName('Chimp'), query = false) {
+function calcEnemyBaseAttack(worldType = _getWorldType(), zone = _getZone(worldType), cell = _getCell(), name = _getEnemyName('Chimp'), query = false) {
 	const mapGrid = worldType === 'world' ? 'gridArray' : 'mapGridArray';
 
 	if (!query && zone >= 200 && cell !== 100 && worldType === 'world' && game.global.universe === 2 && game.global[mapGrid][cell].u2Mutation) {
@@ -576,9 +672,11 @@ function calcEnemyBaseAttack(worldType = _getWorldType(), zone = _getZone(worldT
 	let attack = attackBase * Math.sqrt(zone) * Math.pow(3.27, zone / 2) - 10;
 
 	if (zone === 1) {
-		attack *= 0.35 * (1 + 0.75 * (cell / 100));
+		attack *= 0.35;
+		attack = attack * 0.2 + attack * 0.75 * (cell / 100);
 	} else if (zone === 2) {
-		attack *= 0.5 * (1 + 0.68 * (cell / 100));
+		attack *= 0.5;
+		attack = attack * 0.32 + attack * 0.68 * (cell / 100);
 	} else if (zone < 60) {
 		attack = 0.375 * attack + 0.7 * attack * (cell / 100);
 	} else {
@@ -602,7 +700,7 @@ function calcEnemyBaseAttack(worldType = _getWorldType(), zone = _getZone(worldT
 	return Math.floor(attack);
 }
 
-function calcEnemyAttackCore(worldType = _getWorldType(), zone = _getZone(worldType), cell = _getCell(worldType), name = _getEnemyName('Snimp'), minOrMax = false, customAttack, equality) {
+function calcEnemyAttackCore(worldType = _getWorldType(), zone = _getZone(worldType), cell = _getCell(), name = _getEnemyName('Snimp'), minOrMax = false, customAttack, equality) {
 	let attack = calcEnemyBaseAttack(worldType, zone, cell, name);
 	const fluctuation = game.global.universe === 2 ? 0.5 : 0.2;
 	const gridInitialised = game.global.gridArray && game.global.gridArray.length > 0;
@@ -611,10 +709,15 @@ function calcEnemyAttackCore(worldType = _getWorldType(), zone = _getZone(worldT
 		attack = customAttack;
 	} else if (game.global.universe === 1) {
 		if (worldType === 'world') {
+			const enemy = game.global.gridArray[cell - 1];
 			if (game.global.spireActive) {
 				attack = calcSpire('attack', cell, name);
-			} else if (gridInitialised && mutations.Corruption.active() && game.global.gridArray[cell - 1].mutation) {
-				attack = corruptionBaseStats(cell - 1, zone, 'attack');
+			} else if (gridInitialised && mutations.Corruption.active() && (enemy.mutation || enemy.empowerment)) {
+				if (enemy.mutation !== 'Magma') attack = corruptionBaseStats(cell - 1, zone, 'attack', true);
+
+				if (enemy.empowerment) attack *= 1.2;
+				if (enemy.corrupted === 'corruptStrong') attack *= 2;
+				else if (enemy.corrupted === 'healthyStrong') attack *= 2.5;
 			}
 		} else {
 			const corruptionScale = calcCorruptionScale(game.global.world, 3);
@@ -690,7 +793,7 @@ function calcEnemyAttackCore(worldType = _getWorldType(), zone = _getZone(worldT
 	return minOrMax ? (1 - fluctuation) * attack : (1 + fluctuation) * attack;
 }
 
-function calcEnemyAttack(worldType = 'world', zone = game.global.world, cell = 100, name = 'Improbability', minOrMax, customAttack, equality) {
+function calcEnemyAttack(worldType = _getWorldType(), zone = _getZone(worldType), cell = _getCell(), name = _getEnemyName('Snimp'), minOrMax, customAttack, equality) {
 	let attack = calcEnemyAttackCore(worldType, zone, cell, name, minOrMax, customAttack, equality);
 
 	if (challengeActive('Nom') && (worldType === 'world' || game.global.mapsActive)) {
@@ -703,7 +806,7 @@ function calcEnemyAttack(worldType = 'world', zone = game.global.world, cell = 1
 		if (worldType === 'world' && game.global.usingShriek) attack *= game.mapUnlocks.roboTrimp.getShriekValue();
 	}
 
-	if (typeof atSettings !== 'undefined' && getEmpowerment() === 'Ice' && getPageSetting('fullice')) {
+	if (typeof atSettings !== 'undefined' && getEmpowerment() === 'Ice' && getPageSetting('fullIce')) {
 		const afterTransfer = 1 + Math.ceil(game.empowerments.Ice.currentDebuffPower * getRetainModifier('Ice'));
 		attack *= Math.pow(game.empowerments.Ice.getModifier(), afterTransfer);
 	}
@@ -711,21 +814,36 @@ function calcEnemyAttack(worldType = 'world', zone = game.global.world, cell = 1
 	return minOrMax ? Math.floor(attack) : Math.ceil(attack);
 }
 
-function calcSpecificEnemyAttack(critPower = 2, customBlock, customHealth) {
+function calcSpecificEnemyAttack(critPower = 2, customBlock, customHealth, customAttack) {
 	const enemy = getCurrentEnemy();
-	let attack = calcEnemyAttackCore();
+	if (!enemy) return -1;
+
+	const corrupt = enemy.corrupted && enemy.corrupted !== 'none';
+	let attack = calcEnemyAttackCore(undefined, undefined, enemy.level, enemy.name);
 	attack *= badGuyCritMult(enemy, critPower, customBlock, customHealth);
 
+	if (game.global.mapsActive && !customAttack) attack *= getCurrentMapObject().difficulty;
 	if (challengeActive('Nom') && typeof enemy.nomStacks !== 'undefined') attack *= Math.pow(1.25, enemy.nomStacks);
 	if (challengeActive('Lead')) attack *= 1 + 0.04 * game.challenges.Lead.stacks;
 
-	if (game.global.usingShriek) attack *= game.mapUnlocks.roboTrimp.getShriekValue();
-	if (getEmpowerment() === 'Ice') attack *= game.empowerments.Ice.getCombatModifier();
+	if (game.global.universe === 1 && !game.global.mapsActive && (corrupt || (enemy.level === 100 && mutations.Corruption.active()))) {
+		if (enemy.level === 100) {
+			if (!game.global.spireActive) attack *= calcCorruptionScale(game.global.world, 3);
+			if (game.global.usingShriek) attack *= game.mapUnlocks.roboTrimp.getShriekValue();
+		}
+		if (game.global.spireActive) {
+			if (enemy.corrupted === 'corruptStrong') attack *= 2;
+			if (enemy.corrupted === 'healthyStrong') attack *= 2.5;
+		}
+	}
+
+	if (game.global.universe === 1 && getEmpowerment() === 'Ice') attack *= game.empowerments.Ice.getCombatModifier();
+	if (game.global.universe === 2) attack *= game.portal.Equality.getMult(false);
 
 	return Math.ceil(attack);
 }
 
-function calcEnemyBaseHealth(worldType = _getWorldType(), zone = _getZone(worldType), cell = _getCell(worldType), name = _getEnemyName('Turtlimp'), ignoreMutation) {
+function calcEnemyBaseHealth(worldType = _getWorldType(), zone = _getZone(worldType), cell = _getCell(), name = _getEnemyName('Turtlimp'), ignoreMutation) {
 	if (!ignoreMutation && worldType === 'world' && game.global.universe === 2 && game.global.world > 200 && typeof game.global.gridArray[cell - 1].u2Mutation !== 'undefined') {
 		if (game.global.gridArray[cell - 1].u2Mutation.length > 0 && ['CSX', 'CSP'].some((mutation) => game.global.gridArray[cell - 1].u2Mutation.includes(mutation))) {
 			cell = game.global.gridArray[cell - 1].cs;
@@ -736,11 +854,13 @@ function calcEnemyBaseHealth(worldType = _getWorldType(), zone = _getZone(worldT
 	let health = base * Math.sqrt(zone) * Math.pow(3.265, zone / 2) - 110;
 
 	if (zone === 1 || (zone === 2 && cell < 10)) {
-		health *= 0.6 * (0.25 + 0.72 * (cell / 100));
+		health *= 0.6;
+		health = health * 0.25 + health * 0.72 * (cell / 100);
 	} else if (zone < 60) {
 		health *= 0.4 * (1 + cell / 110);
 	} else {
-		health *= 0.5 * (1 + 0.8 * (cell / 100)) * Math.pow(1.1, zone - 59);
+		health = health * 0.5 + health * 0.8 * (cell / 100);
+		health *= Math.pow(1.1, zone - 59);
 	}
 
 	if (zone < 60) health *= 0.75;
@@ -755,10 +875,10 @@ function calcEnemyBaseHealth(worldType = _getWorldType(), zone = _getZone(worldT
 
 	if (name) health *= game.badGuys[name].health;
 
-	return health;
+	return Math.floor(health);
 }
 
-function calcEnemyHealthCore(worldType = _getWorldType(), zone = _getZone(worldType), cell = _getCell(worldType), name = _getEnemyName('Turtlimp'), customHealth) {
+function calcEnemyHealthCore(worldType = _getWorldType(), zone = _getZone(worldType), cell = _getCell(), name = _getEnemyName('Turtlimp'), customHealth) {
 	let health = calcEnemyBaseHealth(worldType, zone, cell, name);
 	const gridInitialised = game.global.gridArray && game.global.gridArray.length > 0;
 
@@ -766,10 +886,15 @@ function calcEnemyHealthCore(worldType = _getWorldType(), zone = _getZone(worldT
 		health = customHealth;
 	} else if (game.global.universe === 1) {
 		if (worldType === 'world') {
+			const enemy = game.global.gridArray[cell - 1];
 			if (game.global.spireActive) {
 				health = calcSpire('health', cell, name);
-			} else if (gridInitialised && mutations.Corruption.active() && game.global.gridArray[cell - 1].mutation) {
-				health = corruptionBaseStats(cell - 1, zone, 'health');
+			} else if (gridInitialised && mutations.Corruption.active() && (enemy.mutation || enemy.empowerment)) {
+				if (enemy.mutation !== 'Magma') health = corruptionBaseStats(cell - 1, zone, 'health', true);
+
+				if (enemy.empowerment) health *= 4;
+				if (enemy.corrupted === 'corruptTough') health *= 5;
+				else if (enemy.corrupted === 'healthyTough') health *= 7.5;
 			}
 		} else {
 			const corruptionScale = calcCorruptionScale(game.global.world, 10);
@@ -825,7 +950,7 @@ function calcEnemyHealthCore(worldType = _getWorldType(), zone = _getZone(worldT
 	return health;
 }
 
-function calcEnemyHealth(worldType, zone, cell = 99, name = 'Turtlimp', customHealth) {
+function calcEnemyHealth(worldType = _getWorldType(), zone = _getZone(worldType), cell = _getCell(), name = _getEnemyName('Turtlimp'), customHealth) {
 	let health = calcEnemyHealthCore(worldType, zone, cell, name, customHealth);
 
 	if (challengeActive('Domination')) health *= 7.5;
@@ -834,13 +959,12 @@ function calcEnemyHealth(worldType, zone, cell = 99, name = 'Turtlimp', customHe
 	return health;
 }
 
-function calcSpecificEnemyHealth(worldType = _getWorldType(), zone = _getZone(worldType), cell = _getCell(worldType), forcedName) {
+function calcSpecificEnemyHealth(worldType = _getWorldType(), zone = _getZone(worldType), cell = _getCell(), forcedName) {
 	const enemy = worldType === 'world' ? game.global.gridArray[cell - 1] : game.global.mapGridArray[cell - 1];
 	if (!enemy) return -1;
 
 	const corrupt = enemy.corrupted && enemy.corrupted !== 'none';
-	const healthy = corrupt && enemy.corrupted.startsWith('healthy');
-	const name = corrupt ? 'Chimp' : forcedName ? forcedName : enemy.name;
+	const name = corrupt && !game.global.spireActive ? 'Chimp' : forcedName ? forcedName : enemy.name;
 	let health = calcEnemyHealthCore(worldType, zone, cell, name);
 
 	if (challengeActive('Lead')) health *= 1 + 0.04 * game.challenges.Lead.stacks;
@@ -852,12 +976,13 @@ function calcSpecificEnemyHealth(worldType = _getWorldType(), zone = _getZone(wo
 
 	if (worldType !== 'world') {
 		health *= getCurrentMapObject().difficulty;
-	} else if (worldType === 'world' && !healthy && (corrupt || (mutations.Corruption.active() && cell === 100))) {
-		health *= calcCorruptionScale(zone, 10);
-		if (enemy.corrupted === 'corruptTough') health *= 5;
-	} else if (worldType === 'world' && healthy) {
-		health *= calcCorruptionScale(zone, 14);
-		if (enemy.corrupted === 'healthyTough') health *= 7.5;
+	} else if (game.global.universe === 1 && (corrupt || (cell === 100 && mutations.Corruption.active()))) {
+		if (cell === 100 && !game.global.spireActive) health *= calcCorruptionScale(game.global.world, 10);
+
+		if (game.global.spireActive) {
+			if (enemy.corrupted === 'corruptTough') health *= 5;
+			if (enemy.corrupted === 'healthyTough') health *= 7.5;
+		}
 	}
 
 	return health;
@@ -874,23 +999,20 @@ function calcHDRatio(targetZone = game.global.world, worldType = 'world', maxTen
 	if (worldType === 'world') {
 		let customHealth;
 		let enemyName = 'Turtlimp';
-		if (targetZone === 5 || targetZone === 10 || (targetZone >= 15 && targetZone <= 58)) enemyName = 'Blimp';
-		if (targetZone >= 59) enemyName = 'Improbability';
 		if (game.global.universe === 1) {
-			if (targetZone > 229) enemyName = 'Omnipotrimp';
 			if (game.global.spireActive) customHealth = calcSpire('health');
 			else if (isCorruptionActive(targetZone)) customHealth = calcCorruptedStats(targetZone, 'health');
 		} else if (game.global.universe === 2) {
 			if (targetZone > 200) customHealth = calcMutationStats(targetZone, 'health');
 		}
-		enemyHealth = calcEnemyHealth(worldType, targetZone, 100, enemyName, customHealth) * difficulty;
-		universeSetting = game.global.universe === 2 ? equalityQuery(enemyName, targetZone, 100, worldType, difficulty, 'gamma', false, 1, true) : 'X';
+		enemyHealth = calcEnemyHealth(worldType, targetZone, 99, enemyName, customHealth) * difficulty;
+		universeSetting = game.global.universe === 2 ? equalityQuery(enemyName, targetZone, 99, worldType, difficulty, 'gamma', false, 1, true) : 'X';
 	} else if (worldType === 'map') {
 		enemyHealth = calcEnemyHealth(worldType, targetZone, 20, 'Turtlimp') * difficulty;
 		universeSetting = game.global.universe === 2 ? equalityQuery('Snimp', targetZone, 20, worldType, difficulty, 'gamma', true) : 'X';
 	} else if (worldType === 'void') {
-		enemyHealth = calcEnemyHealth(worldType, targetZone, 100, 'Cthulimp') * difficulty;
-		universeSetting = game.global.universe === 2 ? equalityQuery('Cthulimp', targetZone, 100, worldType, difficulty, 'gamma', false, 1, true) : 'X';
+		enemyHealth = calcEnemyHealth(worldType, targetZone, 99, 'Shadimp') * difficulty;
+		universeSetting = game.global.universe === 2 ? equalityQuery('Voidsnimp', targetZone, 99, worldType, difficulty, 'gamma', false, 1, true) : 'X';
 	}
 
 	let ourBaseDamage = calcOurDmg(challengeActive('Unlucky') ? 'max' : 'avg', universeSetting, false, worldType, 'maybe', targetZone - game.global.world, null, heirloomToUse);
@@ -903,6 +1025,7 @@ function calcHDRatio(targetZone = game.global.world, worldType = 'world', maxTen
 			ourBaseDamage /= 1 + 0.2 * game.global.mapBonus;
 			ourBaseDamage *= game.talents.mapBattery.purchased ? 5 : 3;
 		}
+
 		if (game.global.universe === 2 && getPerkLevel('Tenacity') > 0 && !(game.portal.Tenacity.getMult() === Math.pow(1.4000000000000001, getPerkLevel('Tenacity') + getPerkLevel('Masterfulness')))) {
 			ourBaseDamage /= game.portal.Tenacity.getMult();
 			ourBaseDamage *= Math.pow(1.4000000000000001, getPerkLevel('Tenacity') + getPerkLevel('Masterfulness'));
@@ -911,7 +1034,15 @@ function calcHDRatio(targetZone = game.global.world, worldType = 'world', maxTen
 
 	const maxGammaStacks = gammaMaxStacks(false, true, worldType) - 1;
 
-	if (challengeActive('Daily') && typeof game.global.dailyChallenge.weakness !== 'undefined' && maxGammaStacks !== Infinity) ourBaseDamage *= 1 - (Math.max(1, maxGammaStacks) * game.global.dailyChallenge.weakness.strength) / 100;
+	if (challengeActive('Daily')) {
+		if (typeof game.global.dailyChallenge.weakness !== 'undefined' && maxGammaStacks !== Infinity) {
+			ourBaseDamage *= 1 - (Math.max(1, maxGammaStacks) * game.global.dailyChallenge.weakness.strength) / 100;
+		}
+
+		if (worldType === 'map' && typeof game.global.dailyChallenge.rampage !== 'undefined') {
+			ourBaseDamage *= _getRampageBonus(true);
+		}
+	}
 
 	if ((worldType !== 'map' && game.global.universe === 2 && universeSetting < getPerkLevel('Equality') - 14) || game.global.universe === 1) ourBaseDamage *= MODULES.heirlooms.gammaBurstPct;
 
@@ -920,31 +1051,34 @@ function calcHDRatio(targetZone = game.global.world, worldType = 'world', maxTen
 	return enemyHealth / ourBaseDamage;
 }
 
-function calcHitsSurvived(targetZone = game.global.world, worldType = 'world', difficulty = 1, checkOutputs) {
-	const formationMod = game.upgrades.Dominance.done ? 2 : 1;
-	const ignoreCrits = getPageSetting('IgnoreCrits');
-
+function calcHitsSurvived(targetZone = _getZone(), worldType = _getWorldType(), difficulty = 1, extraGyms = 0, extraItem = new ExtraItem(), checkOutputs) {
+	const availableStances = unlockedStances();
+	const formationMod = availableStances.includes('D') || (worldType === 'void' && availableStances.includes('S') && whichScryVoidMaps()) ? 2 : 1;
+	const ignoreCrits = game.global.universe !== 1 ? 2 : getPageSetting('ignoreCrits');
+	0;
 	if (worldType !== 'map' && targetZone % 2 === 1 && challengeActive('Lead')) targetZone++;
 
 	const customAttack = _calcHitsSurvivedAttack(worldType, targetZone);
-	const enemyName = worldType === 'void' ? 'Cthulimp' : targetZone >= 59 ? 'Improbability' : 'Snimp';
+	const enemyName = worldType === 'void' ? 'Voidsnimp' : 'Snimp';
 
 	let hitsToSurvive = targetHitsSurvived(false, worldType);
 	if (hitsToSurvive === 0) hitsToSurvive = 1;
 
-	const health = calcOurHealth(false, worldType, false, true) / formationMod;
-	const block = calcOurBlock(false) / formationMod;
-	const equality = equalityQuery(enemyName, targetZone, 100, worldType, difficulty, 'gamma', null, hitsToSurvive);
+	const health = calcOurHealth(false, worldType, false, true, extraItem) / formationMod;
+	const block = calcOurBlock(false, false, worldType, extraGyms, extraItem) / formationMod;
+	const equality = equalityQuery(enemyName, targetZone, 99, worldType, difficulty, 'gamma', null, hitsToSurvive);
 	let damageMult = 1;
 
-	if (game.global.universe === 1 && ((ignoreCrits === 1 && worldType !== 'void') || ignoreCrits === 0)) {
+	if (ignoreCrits !== 2) {
 		const dailyCrit = challengeActive('Daily') && typeof game.global.dailyChallenge.crits !== 'undefined';
-		const crushed = challengeActive('Crushed');
+
 		if (dailyCrit) damageMult = dailyModifiers.crits.getMult(game.global.dailyChallenge.crits.strength);
-		else if (crushed && health > block) damageMult = 3;
+		else if (challengeActive('Crushed') && health > block) damageMult = 3;
+
+		if (ignoreCrits !== 1 && worldType === 'void') damageMult *= 4;
 	}
 
-	const worldDamage = calcEnemyAttack(worldType, targetZone, 100, enemyName, undefined, customAttack, equality) * difficulty;
+	const worldDamage = calcEnemyAttack(worldType, targetZone, 99, enemyName, undefined, customAttack, equality) * difficulty;
 	const pierce = (game.global.universe === 1 && game.global.brokenPlanet && worldType === 'world' ? getPierceAmt() : 0) * (game.global.formation === 3 ? 2 : 1);
 	const finalDmg = Math.max(damageMult * worldDamage - block, worldDamage * pierce, 0);
 
@@ -971,18 +1105,22 @@ function _calcHitsSurvivedAttack(worldType, targetZone) {
 	return customAttack;
 }
 
-function corruptionBaseStats(cell = game.global.lastClearedCell + 1, targetZone = game.global.world, type = 'attack') {
+function corruptionBaseStats(cell = game.global.lastClearedCell + 1, targetZone = game.global.world, type = 'attack', ignoreMultiplier = false) {
 	cell = game.global.gridArray[cell];
 	const typeFunction = type === 'attack' ? calcEnemyBaseAttack : calcEnemyBaseHealth;
 	let baseStats = typeFunction('world', targetZone, cell.level, 'Chimp', true);
 
 	if (type === 'attack') {
-		if (cell.corrupted === 'healthyStrong') baseStats *= 2;
-		else if (cell.corrupted === 'corruptStrong') baseStats *= 2.5;
+		if (!ignoreMultiplier) {
+			if (cell.corrupted === 'corruptStrong') baseStats *= 2;
+			else if (cell.corrupted === 'healthyStrong') baseStats *= 2.5;
+		}
 		baseStats *= cell.mutation === 'Healthy' ? calcCorruptionScale(targetZone, 5) : calcCorruptionScale(targetZone, 3);
 	} else if (type === 'health') {
-		if (cell.corrupted === 'corruptTough') baseStats *= 5;
-		else if (cell.corrupted === 'healthyTough') baseStats *= 7.5;
+		if (!ignoreMultiplier) {
+			if (cell.corrupted === 'corruptTough') baseStats *= 5;
+			else if (cell.corrupted === 'healthyTough') baseStats *= 7.5;
+		}
 		baseStats *= cell.mutation === 'Healthy' ? calcCorruptionScale(targetZone, 14) : calcCorruptionScale(targetZone, 10);
 	}
 
@@ -1073,6 +1211,7 @@ function enemyDamageModifiers() {
 			Lead: () => 1 + game.challenges.Lead.stacks * 0.04,
 			Corrupted: () => 3
 		};
+
 		attack = applyMultipliers(challengeMultipliers, attack, true);
 
 		if (game.global.usingShriek) attack *= game.mapUnlocks.roboTrimp.getShriekValue();
@@ -1089,6 +1228,7 @@ function enemyDamageModifiers() {
 			Pandemonium: () => (!game.global.mapsActive && game.global.lastClearedCell + 2 === 100 ? game.challenges.Pandemonium.getBossMult() : game.challenges.Pandemonium.getPandMult()),
 			Glass: () => game.challenges.Glass.attackMult()
 		};
+
 		attack = applyMultipliers(challengeMultipliers, attack, true);
 
 		const cell = game.global.gridArray[game.global.lastClearedCell + 1];
@@ -1096,6 +1236,7 @@ function enemyDamageModifiers() {
 			if (cell.u2Mutation && cell.u2Mutation.length > 0 && (cell.u2Mutation.includes('RGE') || (cell.cc && cell.cc[3] > 0))) {
 				attack *= u2Mutations.types.Rage.enemyAttackMult();
 			}
+
 			attack *= game.global.novaMutStacks > 0 ? u2Mutations.types.Nova.enemyAttackMult() : 1;
 		}
 	}
@@ -1178,12 +1319,20 @@ function equalityQuery(enemyName = 'Snimp', zone = game.global.world, currentCel
 	}
 	if (challengeActive('Duel')) ourDmg *= MODULES.heirlooms.gammaBurstPct;
 
-	if (isDaily && typeof game.global.dailyChallenge.weakness !== 'undefined') ourDmg *= 1 - ((worldType === 'map' ? 9 : gammaToTrigger) * game.global.dailyChallenge.weakness.strength) / 100;
+	if (isDaily) {
+		if (typeof game.global.dailyChallenge.weakness !== 'undefined') {
+			ourDmg *= 1 - ((worldType === 'map' ? 9 : gammaToTrigger) * game.global.dailyChallenge.weakness.strength) / 100;
+		}
+
+		if (worldType === 'map' && typeof game.global.dailyChallenge.rampage !== 'undefined') {
+			ourDmg *= _getRampageBonus(true);
+		}
+	}
 
 	let ourDmgEquality = 0;
 	let enemyDmgEquality = 0;
 	let unluckyDmgEquality = 0;
-	const ourEqualityModifier = typeof atSettings !== 'undefined' ? getPlayerEqualityMult_AT(heirloomShieldToEquip(worldType)) : game.portal.Equality.getMult(true);
+	const ourEqualityModifier = typeof atSettings !== 'undefined' ? getPlayerEqualityMult_AT(heirloomShieldToEquip(worldType)) : game.portal.Equality.getModifier(true);
 	const enemyEqualityModifier = game.portal.Equality.getModifier();
 
 	//Accounting for enemies hitting multiple times per gamma burst
@@ -1267,17 +1416,23 @@ function remainingHealth(shieldBreak = false, angelic = false, worldType = 'worl
 	return shieldHealth + soldierHealth;
 }
 
-function enoughHealth(map) {
+function enoughHealth(map, minAvgMax = 'max') {
 	const { name, location, level, size, difficulty } = map;
 	const health = calcOurHealth(false, 'map', false, true);
 	const block = calcOurBlock(false, false);
 	const totalHealth = health + block;
 
-	const enemyName = name === 'Imploding Star' ? 'Neutrimp' : location === 'Void' ? 'Cthulimp' : 'Snimp';
+	const enemyName = name === 'Imploding Star' ? 'Neutrimp' : location === 'Void' ? 'Voidsnimp' : 'Snimp';
+	const cell = name === 'Imploding Star' ? 100 : 99;
 	const worldType = location === 'Void' ? 'void' : 'map';
 	const mapLevel = name === 'The Black Bog' ? game.global.world : level;
 	const equalityAmt = game.global.universe === 2 ? equalityQuery(enemyName, mapLevel, size, 'map', difficulty, 'gamma') : 0;
-	const enemyDmg = calcEnemyAttackCore(worldType, mapLevel, size, enemyName, false, false, equalityAmt) * difficulty;
+	const fluctuation = game.global.universe === 2 ? 1.5 : 1.2;
+
+	let enemyDmg = calcEnemyAttackCore(worldType, mapLevel, size, enemyName, false, false, equalityAmt) * difficulty;
+	if (minAvgMax !== 'max') {
+		enemyDmg /= fluctuation * (minAvgMax === 'min' ? fluctuation : 1);
+	}
 
 	return totalHealth > enemyDmg;
 }

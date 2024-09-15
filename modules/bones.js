@@ -16,9 +16,8 @@ function boneShrine(lineCheck) {
 	if (boneShrineAncientTreasure) _runUniqueMap(ancientTreasure);
 
 	const map = getCurrentMapObject();
+
 	if (!boneShrineAncientTreasure || (game.global.mapsActive && map.name === ancientTreasure && game.global.lastClearedMapCell >= map.size - 30)) {
-		// Use bone charges
-		// Equip staff for the gather type the user is using
 		const gatherStaff = 'heirloomStaff' + boneShrineGather[0].toUpperCase() + boneShrineGather.slice(1);
 		if (getPageSetting(gatherStaff) !== 'undefined') heirloomEquip(gatherStaff, 'Staff');
 		else heirloomEquip('heirloomStaffMap', 'Staff');
@@ -41,12 +40,13 @@ function boneShrine(lineCheck) {
 
 function _getBoneShrineSetting(baseSettings, defaultSetting) {
 	const boneCharges = game.permaBoneBonuses.boosts.charges;
-	// If we have enough bone charges then spend them automatically to stop from capping
+
 	if (defaultSetting.autoBone && boneCharges >= defaultSetting.bonebelow && game.global.world >= defaultSetting.world) {
 		if (defaultSetting.bonebelow <= 0) defaultSetting.bonebelow = 999;
 		defaultSetting.atlantrimp = false;
 		defaultSetting.boneamount = 1;
 		defaultSetting.priority = 0;
+
 		return defaultSetting;
 	}
 
@@ -54,6 +54,7 @@ function _getBoneShrineSetting(baseSettings, defaultSetting) {
 		const currSetting = baseSettings[i];
 		const world = currSetting.world;
 		if (!settingShouldRun(currSetting, world, 0, 'boneShrineSettings')) continue;
+
 		return baseSettings[i];
 	}
 }
@@ -67,6 +68,7 @@ function _getBoneShrineCharges(setting) {
 	const boneShrineSpendBelow = setting.bonebelow === -1 ? 0 : setting.bonebelow;
 	const boneCharges = game.permaBoneBonuses.boosts.charges;
 	if (!setting.autoBone && setting.boneamount > boneCharges - boneShrineSpendBelow) return boneCharges - boneShrineSpendBelow;
+
 	return setting.boneamount;
 }
 
@@ -75,6 +77,7 @@ function boneShrineOutput(charges) {
 	const resources = Object.keys(resourceMaps).map(_calcResource(charges));
 	let totals = Object.entries(resourceMaps).map((resourceMap, i) => _findTotal(resourceMap, resources[i]));
 	totals = totals.map((x) => prettify(x));
+
 	return `${totals[0]} Food, ${totals[1]} Wood, and ${totals[2]} Metal.`;
 }
 
@@ -98,6 +101,7 @@ function _findTotal(resourceMap, resource) {
 		total -= nextCost;
 		tempMax *= 2;
 	}
+
 	return total - resource['owned'];
 }
 
@@ -115,7 +119,8 @@ function buySingleRunBonuses() {
 	}
 
 	if (!trimpStats.isDaily || game.singleRunBonuses.heliumy.owned || game.global.b < 100) return;
-	const heliumySetting = getPageSetting('buyheliumy', game.global.universe);
+
+	const heliumySetting = getPageSetting('heliumyPercent', game.global.universe);
 	if (heliumySetting <= 0 || getDailyHeliumValue(countDailyWeight()) < heliumySetting) return;
 
 	purchaseSingleRunBonus('heliumy');

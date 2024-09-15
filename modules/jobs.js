@@ -74,33 +74,41 @@ function buyJobs(forceRatios) {
 	const { owned, employed } = game.resources.trimps;
 	if (!game.options.menu.fireForJobs.enabled) game.options.menu.fireForJobs.enabled = 1;
 
-	let freeWorkers = _calculateFreeWorkers(owned, maxTrimps, employed);
-	freeWorkers = Math.min(freeWorkers, _employableTrimps(owned, maxTrimps, employed));
-	freeWorkers = _handleNoBreedChallenges(freeWorkers, owned, employed, maxSoldiers);
+	const freeWorkers = _freeWorkers(owned, maxTrimps, employed);
+	const flexibleWorkers = _flexibleWorkers();
+	const notNeededBreeding = _workersNotNeededBreeding(owned, maxTrimps, employed);
+
+	let availableWorkers = Math.min(Math.max(flexibleWorkers, flexibleWorkers + notNeededBreeding), flexibleWorkers + freeWorkers);
+	availableWorkers = _handleNoBreedChallenges(availableWorkers, owned, employed, maxSoldiers);
 
 	const desiredRatios = _getDesiredRatios(forceRatios, jobType, jobSettings, maxTrimps);
-	_handleJobRatios(desiredRatios, freeWorkers);
+	_handleJobRatios(desiredRatios, availableWorkers, maxTrimps);
 }
 
-function _calculateCurrentlyFreeWorkers(owned, maxTrimps, employed) {
-	return Math.ceil(Math.min(maxTrimps / 2, owned)) - employed;
+function employableWorkers(owned, maxTrimps) {
+	return Math.min(Math.ceil(maxTrimps / 2), Math.floor(owned));
 }
 
-function _calculateFreeWorkers(owned, maxTrimps, employed) {
-	const currentFreeWorkers = _calculateCurrentlyFreeWorkers(owned, maxTrimps, employed);
+function _freeWorkers(owned, maxTrimps, employed) {
+	return employableWorkers(owned, maxTrimps) - employed;
+}
+
+function _flexibleWorkers() {
 	const ratioWorkers = ['Farmer', 'Lumberjack', 'Miner', 'Scientist'];
-	const ratioWorkerCount = ratioWorkers.reduce((total, worker) => total + game.jobs[worker].owned, 0);
-
-	return currentFreeWorkers + ratioWorkerCount;
+	return ratioWorkers.reduce((total, worker) => total + game.jobs[worker].owned, 0);
 }
 
-function _employableTrimps(owned, maxTrimps, employed) {
-	const breedingTrimps = owned - trimpsEffectivelyEmployed();
-	if (!game.upgrades.Battle.done) return owned;
+function _workersNotNeededBreeding(owned, maxTrimps, employed) {
+	if (!game.upgrades.Battle.done) return maxTrimps;
 
-	let employable = Math.ceil((breedingTrimps - maxTrimps / 3) / (1 - game.permaBoneBonuses.multitasking.mult()));
+	const breeding = owned - employed;
+	const multitasking = employed * game.permaBoneBonuses.multitasking.mult();
+	const neededBreeding = Math.min(maxTrimps / 3, breeding + multitasking);
 
-	return employed + Math.max(0, Math.min(employable, owned));
+	let excess = breeding + multitasking - neededBreeding;
+	excess /= 1 - game.permaBoneBonuses.multitasking.mult();
+
+	return excess;
 }
 
 function _handleNoBreedChallenges(freeWorkers, owned, employed, maxSoldiers) {
@@ -113,20 +121,20 @@ function _handleNoBreedChallenges(freeWorkers, owned, employed, maxSoldiers) {
 	if ((!game.global.fighting || game.global.soldierHealth <= 0) && freeWorkers > maxSoldiers) freeWorkers -= maxSoldiers;
 
 	if (getPageSetting('trapper')) {
-		const trappaCoordToggle = 1; //getPageSetting('trapperCoordsToggle');
-		let coordTarget = getPageSetting('trapperCoords');
+		const trappaCoordToggle = getPageSetting('trapperCoordStyle');
 		const { done, allowed } = game.upgrades.Coordination;
 		const nextCoordCost = Math.ceil(1.25 * maxSoldiers) - maxSoldiers;
 
-		if (trappaCoordToggle === 1) {
-			coordTarget--;
+		if (trappaCoordToggle === 0) {
+			let coordTarget = getPageSetting('trapperCoords') - 1;
 			if (!game.global.runningChallengeSquared && coordTarget <= 0) coordTarget = trimps.currChallenge === 'Trapper' ? 32 : 49;
 			const canBuyCoordination = done < coordTarget && done !== allowed;
 			if (freeWorkers > nextCoordCost && canBuyCoordination) freeWorkers -= nextCoordCost;
 		}
 
-		if (trappaCoordToggle === 2) {
-			const shouldBuyCoord = coordTarget > game.resources.trimps.maxSoldiers * 1.25;
+		if (trappaCoordToggle === 1) {
+			const armyTarget = getPageSetting('trapperArmySize');
+			const shouldBuyCoord = armyTarget > game.resources.trimps.getCurrentSend() * 1.25;
 			if (freeWorkers > nextCoordCost && done !== allowed && shouldBuyCoord) freeWorkers -= nextCoordCost;
 		}
 	}
@@ -163,8 +171,17 @@ function _buyExplorer(jobSettings) {
 function _buyTrainer(jobSettings) {
 	if (game.jobs.Trainer.locked || !jobSettings.Trainer.enabled) return;
 
+	//Save for important upgrades
+	const upgrades = ['Bounty', 'Efficiency', 'Speedfarming', 'Speedlumber', 'Megafarming', 'Megalumber', 'Coordination', 'Blockmaster', 'TrainTacular', 'Potency'];
+	if (upgrades.some((up) => shouldSaveForSpeedUpgrade(game.upgrades[up]))) return;
+
+	//Extra priority to the first few trainers
 	const { cost, owned } = game.jobs.Trainer;
-	const affordableTrainers = getMaxAffordable(cost.food[0] * Math.pow(cost.food[1], owned), game.resources.food.owned * (jobSettings.Trainer.percent / 100), cost.food[1], true);
+	const firstTrainers = owned < 7 && hdStats.hitsSurvived < Infinity;
+	const basePercent = Math.max(75, jobSettings.Trainer.percent);
+	const percent = firstTrainers && jobSettings.Trainer.percent > 0 ? basePercent - ((basePercent - jobSettings.Trainer.percent) * owned) / 7 : jobSettings.Trainer.percent;
+
+	const affordableTrainers = getMaxAffordable(cost.food[0] * Math.pow(cost.food[1], owned), game.resources.food.owned * (percent / 100), cost.food[1], true);
 
 	if (affordableTrainers > 0) safeBuyJob('Trainer', affordableTrainers);
 }
@@ -248,16 +265,15 @@ function _getDesiredRatios(forceRatios, jobType, jobSettings, maxTrimps) {
 }
 
 function _getScientistRatio(maxTrimps) {
-	const scientistRatios = { ratio: 5, ratio2: 4, ratio3: 16, ratio4: 64, ratio5: 256, ratio6: 1024, ratio7: 4098 };
-
 	const conditions = [
-		{ condition: () => game.global.world >= 150, ratio: scientistRatios.ratio7 },
-		{ condition: () => game.global.world >= 120, ratio: scientistRatios.ratio6 },
-		{ condition: () => game.global.world >= 90, ratio: scientistRatios.ratio5 },
-		{ condition: () => game.global.world >= 65, ratio: scientistRatios.ratio4 },
-		{ condition: () => game.global.world >= 50, ratio: scientistRatios.ratio3 },
-		{ condition: () => maxTrimps >= 400, ratio: scientistRatios.ratio2 },
-		{ condition: () => true, ratio: scientistRatios.ratio }
+		{ condition: () => game.global.world >= 150, ratio: 4098 },
+		{ condition: () => game.global.world >= 120, ratio: 1024 },
+		{ condition: () => game.global.world >= 90, ratio: 256 },
+		{ condition: () => game.global.world >= 65, ratio: 64 },
+		{ condition: () => game.global.world >= 50, ratio: 16 },
+		{ condition: () => game.global.turkimpTimer > 0, ratio: 2 },
+		{ condition: () => maxTrimps >= 400, ratio: 4 },
+		{ condition: () => true, ratio: 5 }
 	];
 
 	return conditions.find(({ condition }) => condition()).ratio;
@@ -281,7 +297,7 @@ function _getAutoJobRatio(maxTrimps) {
 	return conditions.find(({ condition }) => condition()).ratio;
 }
 
-function _handleJobRatios(desiredRatios, freeWorkers) {
+function _handleJobRatios(desiredRatios, freeWorkers, maxTrimps) {
 	const ratioWorkers = ['Farmer', 'Lumberjack', 'Miner', 'Scientist'];
 	const hireWorkers = desiredRatios.map((ratio) => ratio > 0);
 
@@ -294,15 +310,23 @@ function _handleJobRatios(desiredRatios, freeWorkers) {
 	//Calculates how many workers will be left out of the initial distribution
 	const remainder = freeWorkers > 10e6 ? 0 : freeWorkers - desiredWorkers.reduce((partialSum, value) => partialSum + value, 0);
 
-	//Decides where to put them TODO Don't take trimps OUT of scientists early on
+	//Decides where to put them
 	const diff = fDesiredWorkers.map((w, idx) => w - desiredWorkers[idx]);
 	const whereToIncrement = argSort(diff, true).slice(diff.length - remainder);
-	whereToIncrement.forEach((idx) => (hireWorkers[idx] ? desiredWorkers[idx]++ : null));
-	//Calculates the actual number of workers to buy or fire, and the cost of doing so
+	whereToIncrement.forEach((idx) => (hireWorkers[idx] ? desiredWorkers[idx]++ : null)); //TODO Fix hireWorkers messing with the remainder
+
+	//Calculates the actual number of workers to buy or fire
 	desiredWorkers = desiredWorkers.map((w, idx) => w - game.jobs[ratioWorkers[idx]].owned);
+
+	//Prevents scientist from being fired very early on
+	if (desiredWorkers[3] === -1 && maxTrimps < 400 && remainder > 0) {
+		desiredWorkers[whereToIncrement[0]]--;
+		desiredWorkers[3]++;
+	}
+
 	let totalWorkerCost = desiredWorkers.reduce((partialSum, w, idx) => partialSum + (w > 0 ? w * game.jobs[ratioWorkers[idx]].cost.food : 0), 0);
 
-	if (totalWorkerCost > game.resources.food.owned) {
+	if (desiredRatios[0] === 0 && totalWorkerCost > game.resources.food.owned) {
 		const totalWorkersOwned = ratioWorkers.reduce((total, worker) => total + game.jobs[worker].owned, 0);
 		const maxWorkersToHire = Math.max(Math.floor(freeWorkers / 10), freeWorkers - totalWorkersOwned);
 		const farmersToHire = Math.max(calculateMaxAfford('Farmer', false, false, true), maxWorkersToHire + 1 - game.jobs.Farmer.owned);

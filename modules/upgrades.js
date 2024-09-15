@@ -12,9 +12,9 @@ function gigaTargetZone() {
 	if (!trimpStats.isC3) targetZone = Math.max(targetZone, lastPortalZone, challengeZone, portalZone - 1);
 	else targetZone = Math.max(targetZone, c2zone - 1);
 
-	if (trimpStats.isDaily && getPageSetting('AutoGenDC') !== 0) targetZone = Math.min(targetZone, 230);
-	if (trimpStats.isC3 && getPageSetting('AutoGenC2') !== 0) targetZone = Math.min(targetZone, 230);
-	if (getPageSetting('fuellater') >= 1 || getPageSetting('beforegen') !== 0) targetZone = Math.min(targetZone, Math.max(230, getPageSetting('fuellater')));
+	if (trimpStats.isDaily && getPageSetting('autoGenModeDaily') !== 0) targetZone = Math.min(targetZone, 230);
+	if (trimpStats.isC3 && getPageSetting('autoGenModeC2') !== 0) targetZone = Math.min(targetZone, 230);
+	if (getPageSetting('autoGenFuelStart') >= 1 || getPageSetting('autoGenModeBefore') !== 0) targetZone = Math.min(targetZone, Math.max(230, getPageSetting('autoGenFuelStart')));
 
 	if (targetZone < 60) {
 		targetZone = Math.max(65, game.global.highestLevelCleared);
@@ -88,19 +88,43 @@ function firstGiga() {
 }
 
 function needGymystic() {
-	return game.upgrades['Gymystic'].allowed > game.upgrades['Gymystic'].done;
+	return shouldSaveForSpeedUpgrade(game.upgrades.Gymystic, 0.125, 0.125, 0.125, 0.75);
 }
 
-function shouldSaveForSpeedUpgrade(upgradeObj, foodRequired = 1 / 4, woodRequired = 1 / 4, metalRequired = 1 / 4, scienceRequired = 2 / 4) {
+function trapperHoldCoords(jobChange = false) {
+	if (!noBreedChallenge() || !getPageSetting('trapper')) return false;
+
+	const trappaCoordToggle = getPageSetting('trapperCoordStyle');
+	if (trappaCoordToggle === 0) {
+		let coordTarget = getPageSetting('trapperCoords');
+		if (coordTarget > 0) coordTarget--;
+		if (!game.global.runningChallengeSquared && coordTarget <= 0) coordTarget = trimps.currChallenge === 'Trapper' ? 32 : 49;
+		return coordTarget > 0 && game.upgrades.Coordination.done >= coordTarget;
+	}
+
+	if (trappaCoordToggle === 1) {
+		const armyTarget = getPageSetting('trapperArmySize');
+		const coordinated = getPerkLevel('Coordinated');
+		const coordinatedMult = coordinated > 0 ? 0.25 * Math.pow(game.portal.Coordinated.modifier, coordinated) + 1 : 1;
+		return game.resources.trimps.getCurrentSend() * 1.25 > armyTarget;
+	}
+
+	if (jobChange) buyJobs();
+	return false;
+}
+
+function shouldSaveForSpeedUpgrade(upgradeObj, foodRequired = 0.25, woodRequired = 0.25, metalRequired = 0.25, scienceRequired = 0.5) {
 	const resources = ['food', 'wood', 'metal', 'science'];
 	const resourceRequired = [foodRequired, woodRequired, metalRequired, scienceRequired];
 	const resourceOwned = resources.map((r) => game.resources[r].owned);
 
-	if (upgradeObj.done >= upgradeObj.allowed) return false;
-	if (upgradeObj === game.upgrades.Coordination && !canAffordCoordinationTrimps()) return false;
+	if (challengeActive('Scientist') || upgradeObj.done >= upgradeObj.allowed) return false;
+	if (upgradeObj === game.upgrades.Coordination && (!canAffordCoordinationTrimps() || trapperHoldCoords())) return false;
 
 	for (let i = 0; i < resources.length; i++) {
-		const resourceCost = upgradeObj.cost.resources[resources[i]] ? resolvePow(upgradeObj.cost.resources[resources[i]], upgradeObj) * resourceRequired[i] : 0;
+		const cost = upgradeObj.cost.resources[resources[i]];
+		const resourceCost = cost ? resourceRequired[i] * (cost[1] !== undefined ? resolvePow(cost, upgradeObj) : cost) : 0;
+
 		if (resourceOwned[i] < resourceCost) return false;
 	}
 
@@ -113,8 +137,8 @@ function sciUpgrades() {
 	const upgrades = game.upgrades;
 	const sLevel = game.global.sLevel;
 
-	const addUpgrade = (upgrade, condition = true) => {
-		if (condition && upgrades[upgrade].done === 0) {
+	const addUpgrade = (upgrade, condition = true, amt = 0) => {
+		if (condition && upgrades[upgrade].done <= amt) {
 			upgradeList.push(upgrade);
 		}
 	};
@@ -124,14 +148,16 @@ function sciUpgrades() {
 
 	//Scientist I - 11500 Science + Scientist II - 8000 Science
 	if (sLevel <= 1) {
+		const coordLevel = sLevel === 0 ? 8 : 7;
 		addUpgrade('Bloodlust');
-		addUpgrade('Coordination', upgrades.Coordination.done <= (sLevel === 0 ? 8 : 7));
+		addUpgrade('Coordination', upgrades.Coordination.done <= coordLevel, coordLevel);
 		addUpgrade('Bestplate');
 		addUpgrade('Megamace', sLevel === 0);
 	}
 	//Scientist III + V - 1500 Science.
 	else if (sLevel === 2 || sLevel >= 4) {
-		addUpgrade('Coordination', upgrades.Coordination.done <= 2);
+		const coordLevel = 2;
+		addUpgrade('Coordination', upgrades.Coordination.done <= coordLevel, coordLevel);
 		addUpgrade('Speedminer');
 		addUpgrade('Speedlumber');
 		addUpgrade('Egg', sLevel >= 4);
@@ -160,15 +186,18 @@ function buyUpgrades() {
 	const upgradeSetting = getPageSetting('upgradeType');
 	if (upgradeSetting === 0) return;
 
-	const scientistsAreRelevant = !isPlayerRelevant('science', false, 4);
-	const researchIsRelevant = isPlayerRelevant('science', false, 0.25);
 	const needScientists = game.upgrades.Scientists.done < game.upgrades.Scientists.allowed;
+	const needBounty = !game.upgrades.Bounty.done && game.upgrades.Bounty.allowed;
 	const needEff = game.upgrades.Efficiency.done < game.upgrades.Efficiency.allowed;
 	const needMega = game.upgrades.Megascience.done < game.upgrades.Megascience.allowed;
 	const needSpeed = game.upgrades.Speedscience.done < game.upgrades.Speedscience.allowed;
+	const effRelevance = game.global.world >= 60 ? (game.global.frugalDone ? 1.5 : 1) : 1 / 3;
+	const scientistsAreRelevant = !isPlayerRelevant('science', false, 2);
+	const researchIsRelevant = isPlayerRelevant('science', false, effRelevance);
 	const saveForEff = shouldSaveForSpeedUpgrade(game.upgrades['Efficiency']);
 
 	const upgradeList = populateUpgradeList();
+	const scientistChallenge = challengeActive('Scientist');
 
 	for (let upgrade in upgradeList) {
 		upgrade = upgradeList[upgrade];
@@ -177,31 +206,21 @@ function buyUpgrades() {
 		if (!available) continue;
 
 		if (upgrade === 'Coordination') {
-			if (upgradeSetting === 2 || !canAffordCoordinationTrimps()) continue;
-			//Skip coords if we have more than our designated cap otherwise buy jobs to ensure we fire enough workers for the coords we want to get.
-			if (challengeActive('Trappapalooza') || (challengeActive('Trapper') && getPageSetting('trapper'))) {
-				const trappaCoordToggle = 1; //getPageSetting('trapperCoordsToggle');
-				let coordTarget = getPageSetting('trapperCoords');
-				if (trappaCoordToggle === 1) {
-					if (coordTarget > 0) coordTarget--;
-					if (!game.global.runningChallengeSquared && coordTarget <= 0) coordTarget = trimps.currChallenge === 'Trapper' ? 32 : 49;
-					if (coordTarget > 0 && gameUpgrade.done >= coordTarget) continue;
-				}
-				if (trappaCoordToggle === 2) {
-					if (game.resources.trimps.maxSoldiers * 1.25 > coordTarget) continue;
-				}
-				buyJobs();
-			}
+			if (upgradeSetting === 2 || !canAffordCoordinationTrimps() || trapperHoldCoords(true)) continue;
 		} else if (upgrade === 'Gigastation') {
 			if (!getPageSetting('buildingsType') || !getPageSetting('warpstation')) continue;
-			if (!bwRewardUnlocked('DecaBuild')) {
-				if (getPageSetting('autoGigas') && game.upgrades.Gigastation.done === 0 && !firstGiga()) continue;
-				else if (game.global.lastWarp ? game.buildings.Warpstation.owned < Math.floor(game.upgrades.Gigastation.done * getPageSetting('deltaGigastation')) + getPageSetting('firstGigastation') : game.buildings.Warpstation.owned < getPageSetting('firstGigastation')) continue;
+
+			if (getPageSetting('autoGigas') && game.upgrades.Gigastation.done === 0 && !firstGiga()) {
+				continue;
+			} else if (game.global.lastWarp && game.buildings.Warpstation.owned < Math.floor(game.upgrades.Gigastation.done * getPageSetting('deltaGigastation')) + getPageSetting('firstGigastation')) {
+				continue;
+			} else if (game.buildings.Warpstation.owned < getPageSetting('firstGigastation')) {
+				continue;
 			}
 		} else if (upgrade === 'Bloodlust') {
 			if (game.global.world === 1) continue;
 			const needMiner = !challengeActive('Metal') && !game.upgrades.Miners.done;
-			const needScientists = !challengeActive('Scientist') && !game.upgrades.Scientists.done;
+			const needScientists = !scientistChallenge && !game.upgrades.Scientists.done;
 			if (needScientists && game.resources.science.owned < 160 && game.resources.food.owned < 450) continue;
 			if (needMiner && needScientists && game.resources.science.owned < 220) continue;
 			if (needMiner && game.resources.science.owned < 120) continue;
@@ -209,12 +228,14 @@ function buyUpgrades() {
 			continue;
 		}
 
+		//TODO Maybe rework this priority system
 		//Prioritise Science/scientist upgrades
-		if (upgrade !== 'Bloodlust' && upgrade !== 'Miners' && upgrade !== 'Scientists' && !atSettings.portal.aWholeNewWorld) {
+		if (upgrade !== 'Bloodlust' && upgrade !== 'Miners' && upgrade !== 'Scientists' && !atSettings.portal.aWholeNewWorld && !scientistChallenge) {
 			if (needScientists) continue;
-			if (needEff && researchIsRelevant && saveForEff && upgrade !== 'Efficiency') continue;
+			if (needBounty && upgrade !== 'Bounty') continue;
+			if (!needBounty && needEff && researchIsRelevant && saveForEff && upgrade !== 'Efficiency') continue;
 
-			if (!needEff || !researchIsRelevant || upgrade !== 'Efficiency') {
+			if ((!needBounty && !needEff) || (!needBounty && !researchIsRelevant) || (upgrade !== 'Efficiency' && upgrade !== 'Bounty')) {
 				if (needSpeed && scientistsAreRelevant && upgrade !== 'Speedscience') continue;
 				if (needMega && scientistsAreRelevant && !['Speedscience', 'Megascience'].includes(upgrade)) continue;
 			}
@@ -244,6 +265,7 @@ function getNextGoldenUpgrade() {
 		let purchased = game.goldenUpgrades[name].purchasedAt.length;
 		let old = done[name] ? done[name] : 0;
 
+		if (name === 'Helium' && game.global.runningChallengeSquared) continue;
 		if (name === 'Void' && parseFloat((game.goldenUpgrades.Void.currentBonus + game.goldenUpgrades.Void.nextAmt()).toFixed(2)) > 0.72) continue;
 
 		if (purchased < number + old) return name;
@@ -277,5 +299,10 @@ function autoGoldUpgrades() {
 	if (!goldenUpgradesShown || getAvailableGoldenUpgrades() <= 0) return;
 
 	const selected = getNextGoldenUpgrade();
-	if (selected) buyGoldenUpgrade(selected);
+	if (selected) {
+		const heName = heliumOrRadon();
+		const guName = selected === 'Helium' ? heName : selected;
+		buyGoldenUpgrade(selected);
+		debug(`Purchased Golden ${guName} #${game.goldenUpgrades[selected].purchasedAt.length}`, 'golden_Upgrades', '*upload2');
+	}
 }
