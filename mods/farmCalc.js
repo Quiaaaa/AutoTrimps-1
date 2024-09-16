@@ -437,10 +437,33 @@ function stats(lootFunction = lootDefault) {
 		}
 	}
 
-	function cellsPerSecond() { // Nobody seems to be able to get this function to match the calculator's output. Wheeee
+	// ** Duplicated code that should be moved out of simulate() later
+	let lootMult = 1;
+	let { difficulty, size, special, zone } = saveData;
+
+	const mapLevel = zone - game.global.world;
+	const simulateMap = _simulateSliders(zone, special, saveData.mapBiome);
+
+	let mapOwned = findMap(mapLevel, special, saveData.mapBiome);
+	if (!mapOwned) mapOwned = findMap(mapLevel, simulateMap.special, simulateMap.location, simulateMap.perfect);
+
+	if (mapOwned) {
+		const map = game.global.mapsOwnedArray[getMapIndex(mapOwned)];
+		difficulty = Number(map.difficulty);
+		size = Number(map.size);
+		lootMult = Number(map.loot);
+	} else {
+		difficulty = Number(simulateMap.difficulty);
+		size = Number(simulateMap.size);
+		special = simulateMap.special;
+		lootMult = simulateMap.loot;
+	}
+	// **
+
+	function cellsPerSecond(size) {
 		const cellsKilling = saveData.ok_spread + 1;
 		const ceiledFightingSpeed = Math.ceil(saveData.speed) / 10;
-		const attacksPerMap = Math.ceil(saveData.size / cellsKilling);
+		const attacksPerMap = Math.ceil(size / cellsKilling);
 
 		const A = game.portal.Agility.level > 2 ? 0.1 : 0.2;
 		const mapLoadTime = 0.1 + A + ceiledFightingSpeed;
@@ -448,7 +471,7 @@ function stats(lootFunction = lootDefault) {
 		const actualFightingSpeed = ceiledFightingSpeed + mapLoadTime / attacksPerMap;
 		return cellsKilling / actualFightingSpeed;
 	}
-
+	let debugIgnoredMaps = 0
 	for (let mapLevel = saveData.zone + extra; mapLevel >= 6; --mapLevel) {
 		if (saveData.coordinate) {
 			coords = Math.ceil(coords / 1.25);
@@ -456,33 +479,35 @@ function stats(lootFunction = lootDefault) {
 			saveData.challenge_attack = coords;
 		}
 
-		if (saveData.uberNature != "Ice" && calcEnemyBaseHealth('map', mapLevel, 1, "Chimp") > saveData.attack * 2) {
+
+		if (saveData.uberNature != "Ice" && calcEnemyBaseHealth('map', mapLevel, 1, "Chimp") > saveData.attack * 4) { // TODO Poison and Wind both have large impact on what is reasonable to farm.  As does overkill.  
+			++debugIgnoredMaps
 			continue; // ignore maps we are nowhere close to hitting, but ice is weird
 		}
+
+		// TODO Fragment check
+
 		let tmp = zone_stats(mapLevel, saveData.stances, saveData, lootFunction);
 
 		if (tmp.zone !== 'z6') {
-			if (tmp.value < 1 && mapLevel >= saveData.zone) continue;
-			if (tmp.canAffordPerfect) mapsCanAffordPerfect++;
+			stats.unshift(tmp); // add current to stats so we can get_best immediately.
 			if (stats.length) {
 				let currentBest = get_best([stats, saveData.stances])
-				if (
-					(mapsCanAffordPerfect >= 6
-						&& tmp.value < 0.500 * currentBest.loot.value // Incredibly generous low map threshold
-						&& mapLevel < saveData.zone - 3 // why is this check relevant? 
-					)
-					|| tmp.killSpeed >= cellsPerSecond() // If we are max overkilling, going down in level is obviously bad
-					|| stats.length >= maxMaps) break;
+				if (tmp.value < 0.5 * currentBest.loot.value) { console.debug("Stopping sim: low resource gain"); break; } // Incredibly generous low map threshold TODO figure out what to set this to really
+				if (tmp.killSpeed + 0.1 >= cellsPerSecond(size)) { console.debug("Stopping sim: reached max kill speed"); break; } // This should not require any more fiddling, it's universally correct
+				if (stats.length >= maxMaps) { console.debug("Stopping sim: Too many Maps") }
 			}
 		}
-
-		stats.unshift(tmp);
 		if (tmp.zone === 'z6') break;
-
 	}
-	//currentBest = get_best([stats, saveData.stances])
-	//console.log(stats)
-	//console.log(currentBest.loot.mapLevel)
+
+	// Debugging 
+	currentBest = get_best([stats, saveData.stances])
+	if (debugIgnoredMaps > 0) console.debug("Ignored maps for being too hard:", debugIgnoredMaps);
+	console.debug("Best Map:", currentBest.loot.mapLevel)
+	console.debug("Simulations run:", stats.length + 1)
+	console.debug(stats)
+
 	return [stats, saveData.stances];
 }
 
